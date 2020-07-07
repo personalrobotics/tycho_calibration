@@ -156,7 +156,7 @@ def scipy_optimize(func, initP, method='BFGS', max_func=15000, iprint=1, save=No
 
 if __name__ == '__main__':
   # Load data from CSV that contains m6 (optitrack tip location) and jp (joint positions)
-  df = pd.read_csv('data/old/m6_cp.csv')
+  df = pd.read_csv('data/m6_cp.csv')
   list_m6 = [np.fromstring(r[1:-1], dtype=np.float, sep=' ') for r in df['m6'].to_list()] #[1:-1] to exclude '['']'
   list_jp = [np.fromstring(r[1:-1], dtype=np.float, sep=' ')[0:6]  for r in df['joint_position'].to_list()] # keep only 6 joints
   print("size of datapoints:", len(list_m6))
