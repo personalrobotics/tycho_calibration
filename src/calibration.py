@@ -29,61 +29,18 @@ def get_transformation_matrix(params):
   last_row = np.array([[0, 0, 0, 1]])
   return np.vstack((np.hstack((rot, trans)),last_row))
 
-def calculate_FK_transformation(FKparams, current_position):
+def calculate_FK_transformation(FKparams, joint_position):
   # Given a list of FKparams, shape N by 3, return transformation
   ee = np.eye(4)
-  for (alpha, a, d), theta in zip(FKparams, current_position):
+  for (alpha, a, d), theta in zip(FKparams, joint_position):
     ee = ee.dot(get_DH_transformation(alpha, a, theta, d))
   return ee
-
-def optimize_R_using_hebi_FK(list_m6, list_hebiee_tip, initP=None):
-  initP = initP or np.array(
-    [0.001, 0.001, 0.001, 1.000, # quat x y z w, almost identity
-     -1.4426,-0.5949,0.0058] # x y z shift
-  )
-  def cost_func(p):
-    loss = 0
-    R = get_transformation_matrix(p)
-    _m6 = np.ones(4)
-    for m6, hebi_tip in zip(list_m6, list_hebiee_tip):
-      _m6[0:3] = m6
-      transform = R.dot(_m6)[0:3]
-      loss += np.linalg.norm((transform - hebi_tip).reshape(3))
-    return loss / len(list_m6)
-  return initP, cost_func
-
-def optimize_FK_only(initP=None):
-  initP = initP or np.array([
-    np.pi/2,0.01,0.01,
-    np.pi/2,0.01,0.01,
-    np.pi/2,0.01,0.01,
-    np.pi/2,0.01,0.01,
-    np.pi/2,0.01,0.01,
-    np.pi/2,0.01,0.01,
-    np.pi/2,0.01,0.01])
-  def cost_func(data, p):
-    loss = []
-    params = np.reshape(p, (-1,3)) # each link is represented by 3 params
-    for m6, cp in data:
-      ee = calculate_FK_transformation(params, cp)
-      prediction = ee[0:3, 3].reshape(3)
-      loss.append(np.linalg.norm(prediction - m6))
-    return np.average(loss)
-  return initP, cost_func
-
-def optimize_joint(initRparam, initFKparam):
-  pass
-
-def print_error(error):
-  square_error = np.square(error)
-  print('Average of squared error per each dimension', np.average(square_error, axis=0))
-  print('Average distance error', np.average(np.linalg.norm(error, axis=1)))
 
 def get_hebi_fk(joint_positions,
                 arm_hrdf):
   from hebi_env.arm_container import create_empty_robot
   arm = create_empty_robot(arm_hrdf)
-  return np.array([arm.get_FK_ee(p) for p in joint_positions]) # data_size x 4 x 4
+  return np.array([np.array(arm.get_FK_ee(p)) for p in joint_positions]) # data_size x 4 x 4
 
 def get_hebi_fk_tips(list_of_hebiee):
   tips = []
@@ -98,9 +55,80 @@ def get_hebi_fk_tips(list_of_hebiee):
     tips.append(position)
   return tips
 
-def cmaes(func, initP):
+# ==============================================================
+# Optimization cost and initial params
+# ==============================================================
+
+def optimize_R_using_hebi_FK(list_m6, list_hebiee_tip, initP=None):
+  initP = initP or np.array(
+    # optimized result from 20200706
+    [-0.00750097, 0.01674101, 0.00895461, 0.99979162, # quat x y z w, almost identity
+     -1.4426,-0.5949,0.0058] # x y z shift
+  )
+  def cost_func(p, verbose=False):
+    loss = []
+    R = get_transformation_matrix(p)
+    _m6 = np.ones(4)
+    for m6, hebi_tip in zip(list_m6, list_hebiee_tip):
+      _m6[0:3] = m6
+      transform = R.dot(_m6)[0:3]
+      loss.append(np.linalg.norm((transform - hebi_tip).reshape(3))) # Euclidean norm
+    return np.average(loss) if not verbose else loss
+  return initP, cost_func
+
+def optimize_FK_only(list_m6_in_hebi_frame, list_jp, initP=None):
+  initP = initP or np.array([
+    #0,0,0.11,
+    #np.pi/2,0,0.11,
+    #np.pi,0.3,0.09,
+    #np.pi,0.3,0.1,
+    #np.pi/2,0,0.11,
+    #np.pi/2,0,0.11,
+    #-0.707, 0, 0, 0.707, 0.13, 0.08, 0.03 # from end to DH to tip
+    #])
+  # optimized on 20200706
+   -7.54514008e-03, 2.45281047e-02, 7.08143884e-02,
+    1.56589303e+00, 1.33388682e-02, 1.03374056e-01,
+    3.14089276e+00, 3.25899897e-01, 9.65543814e-02,
+    3.13528983e+00, 3.24141477e-01, 9.39957941e-02,
+    1.55531781e+00,-3.14198542e-03, 1.14360318e-01,
+    1.56043061e+00, 1.76807249e-03, 1.10235218e-01,
+    -7.07000000e-01, 0.00000000e+00, 0.00000000e+00, 7.07000000e-01,
+    1.29888522e-01, 7.69647208e-02, 3.02352183e-02,
+    ])
+  def cost_func(p):
+    loss = []
+    DH_params = np.reshape(p[:18], (6,3)) # each link is represented by 3 params
+    last_transformation = get_transformation_matrix(p[-7:])
+    for m6, cp in zip(list_m6_in_hebi_frame, list_jp):
+      ee = calculate_FK_transformation(DH_params, cp)
+      ee = ee.dot(last_transformation)
+      prediction = ee[0:3, 3].reshape(3)
+      loss.append(np.linalg.norm(prediction - m6))
+    return np.average(loss)
+  return initP, cost_func
+
+def optimize_FK_and_R(initRparam, initFKparam, list_m6, list_jp):
+  initP = np.hstack((initRparam, initFKparam)).reshape(-1)
+  def cost_func(p):
+    loss = []
+    R_params = np.reshape(p[:7], -1)
+    R = get_transformation_matrix(R_params)
+    pad_m6 = np.ones((len(list_m6),4))
+    pad_m6[:,0:3] = np.array(list_m6)
+    DH_params = np.reshape(p[7:25], (6,3))
+    last_transformation = get_transformation_matrix(p[-7:])
+    for m6, cp in zip(pad_m6, list_jp):
+      ee = calculate_FK_transformation(DH_params, cp)
+      ee = ee.dot(last_transformation)
+      prediction = ee[0:3, 3].reshape(3)
+      loss.append(np.linalg.norm(R.dot(m6)[0:3] - prediction))
+    return np.average(loss)
+  return initP, cost_func
+
+def cmaes(func, initP, var=1):
   import cma
-  es = cma.CMAEvolutionStrategy(initP, 5)
+  es = cma.CMAEvolutionStrategy(initP, var)
   best_so_far = func(initP)
   best_params = initP
   while not es.stop():
@@ -128,9 +156,9 @@ def scipy_optimize(func, initP, method='BFGS', max_func=15000, iprint=1, save=No
 
 if __name__ == '__main__':
   # Load data from CSV that contains m6 (optitrack tip location) and jp (joint positions)
-  df = pd.read_csv('data/stored_m6&cp.csv')
-  list_m6 = [np.fromstring(r[1:-1], dtype=np.float, sep=',') for r in df['m6'].to_list()] #[1:-1] to exclude '['']'
-  list_jp = [np.fromstring(r[1:-1], dtype=np.float, sep=',')  for r in df['current_position'].to_list()]
+  df = pd.read_csv('data/old/m6_cp.csv')
+  list_m6 = [np.fromstring(r[1:-1], dtype=np.float, sep=' ') for r in df['m6'].to_list()] #[1:-1] to exclude '['']'
+  list_jp = [np.fromstring(r[1:-1], dtype=np.float, sep=' ')[0:6]  for r in df['joint_position'].to_list()] # keep only 6 joints
   print("size of datapoints:", len(list_m6))
   print("first m6", list_m6[0])
   print("first jp", list_jp[0])
@@ -142,31 +170,56 @@ if __name__ == '__main__':
   print("first Hebi EE\n", list_hebiee[0])
   print("first Hebi calculated tip\n", list_hebiee_tip[0])
 
-  # Optimize R
-  print("\n\nOptimize the transformation matrix R from optitrack frame to hebi\n\n")
-  initP, cost_func = optimize_R_using_hebi_FK(list_m6, list_hebiee_tip)
-  print('Before optimize, func =', cost_func(initP))
-  res = scipy_optimize(cost_func, initP, method='L-BFGS-B', max_func=1000, iprint=10)
-  #res = cmaes(cost_func, initP)
+  # dummy params
+  R_params, _ = optimize_R_using_hebi_FK(None, None)
+  FK_params, _ = optimize_FK_only(None, None)
 
-  # Optimize hebi's FK
-  print("\n\nOptimize FK function\n\n")
-  #initP, cost_func = optimize_FK()
-  #res = BLABLA
+  # ----------------------------------------------------------------------------
+  # STEP1: Optimize R
+  # ----------------------------------------------------------------------------
+  if False:
+    print("\n\nOptimize the transformation matrix R from optitrack frame to hebi\n\n")
+    initP, cost_func = optimize_R_using_hebi_FK(list_m6, list_hebiee_tip)
+    init_distance = cost_func(initP, verbose=True)
+    print('Before optimize, avg distance =', np.average(init_distance))
+    print('Before optimize, max distance = ', np.max(init_distance))
+    print('Before optimize, the worst datapoint is ', list_m6[np.argmax(init_distance)], list_hebiee_tip[np.argmax(init_distance)])
+    # scipy optimize
+    res = scipy_optimize(cost_func, initP, method='L-BFGS-B', max_func=1000, iprint=10)
+    est_R = res.x
+    est_R[0:4] = np.array(est_R[0:4]) / np.linalg.norm(est_R[0:4]) # normalize quat
+    print("Estimated R from optitrack to base", est_R)
+    # cmaes optimize
+    res = cmaes(cost_func, initP)
+    res[0:4] = np.array(res[0:4]) / np.linalg.norm(res)
+    print("CMEAS (perhaps more of a global optim)", res)
+    R_params = res
 
-  # Last joint optimize
-  print("\n\nJointly optimize R and FK locally\n\n")
-  #initP, cost_func = optimize_FKandR()
-  # res = BLABLA
+  # ----------------------------------------------------------------------------
+  # STEP2: Optimize Hebi FK
+  # ----------------------------------------------------------------------------
+  if False:
+    print("\n\nOptimize FK function\n\n")
+    R = get_transformation_matrix(R_params)
+    list_m6_in_hebi_frame = []
+    _m6 = np.ones(4)
+    for m6 in list_m6:
+      _m6[0:3] = m6
+      list_m6_in_hebi_frame.append(R.dot(_m6)[0:3].reshape(3))
+    initP, cost_func = optimize_FK_only(list_m6_in_hebi_frame, list_jp)
+    print('Before optimize, avg distance =', cost_func(initP))
+    res = scipy_optimize(cost_func, initP, method='L-BFGS-B', max_func=10000, iprint=20).x
+    #res = cmaes(cost_func, initP)
+    print("Estimated FK cost", cost_func(res))
+    print("Estimated FK params", res)
+    FK_params = res
 
-  # Profile Hebi's performance
-  #print("Profiling hebi's performance")
-  #print(profile_hebi(data))
-
-  # Initial params
-  #func = partial(cost_func, data)
-  #print('Inital matrix loss',func(initP))
-
-
-  #np.savetxt('optimized_FK.txt',optimize_FK_param, delimiter=',')
-
+  # ----------------------------------------------------------------------------
+  # STEP3: Optimize R and FK jointly (or perhaps iteratively?)
+  # ----------------------------------------------------------------------------
+  if True:
+    print("\n\nJointly optimize R and FK locally\n\n")
+    initP, cost_func = optimize_FK_and_R(R_params, FK_params, list_m6, list_jp)
+    print('Before optimize, avg distance =', cost_func(initP))
+    res = scipy_optimize(cost_func, initP, method='L-BFGS-B', max_func=30000, iprint=50).x
+    print('Optimized distance', cost_func(res))
