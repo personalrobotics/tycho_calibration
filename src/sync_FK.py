@@ -8,13 +8,24 @@ def construct_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--bag_folder_location', type=str, default="/home/hebi/hebi/hebi_ws/src/hebi_teleop/recording/")
     parser.add_argument('--bag_folder_name', type=str, default="calibration")
-    parser.add_argument('--save_file_name', type=str, default="m6_jps.csv")
+    parser.add_argument('--save_file_name', type=str, default="data/m6_jps.csv")
     return parser
 
 args = construct_parser().parse_args()
 assert(args.bag_folder_name != '')
 assert(args.save_file_name != '')
 args.bag_folder = os.path.join(args.bag_folder_location, args.bag_folder_name)
+
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+print(bcolors.BOLD + bcolors.FAIL + "[WARNING]: PLEASE CLOSE ANY ROS TOPIC !!!!!" + bcolors.ENDC)
 
 from builtins import input
 from subprocess import Popen, STDOUT, PIPE
@@ -25,7 +36,7 @@ from sensor_msgs.msg import JointState
 
 FNULL = open(os.devnull, 'w')
 
-label_name = os.path.join(args.bag_folder_name, args.save_file_name)
+label_name = args.save_file_name
 print(label_name)
 
 if os.path.exists(label_name):
