@@ -50,7 +50,7 @@ def get_hebi_fk_tips(list_of_hebiee):
     position = (init_position + 0 * x_axis +
                  (0.007 - 0.0001) * y_axis + # 0.007 - 0.0001 is about the shift from holder screw to center of chop
                  (0.0017 + 0.0065) * z_axis) # axis coming out from the module plate, 0.0017 holder offset to module plate, 0.0065 bring to chopsticks center
-    position = position + x_axis * (0.0035+0.112) # Tip of bottom chopsticks on robot, 0.0035 is half of the holder width, 0.11 is the first part lengh of the chopsticks
+    position = position + x_axis * (0.0035+0.11) # Tip of bottom chopsticks on robot, 0.0035 is half of the holder width, 0.1135 is the first part lengh of the chopsticks
     tips.append(position)
   return tips
 
@@ -77,8 +77,11 @@ def get_fk_tips(list_jp, FK_params):
 # Optimization cost and initial params
 # ==============================================================
 
-measured_R = np.array([0, 0, 0, 1, # quat x y z w, almost identity
-    -0.025816, -0.479914, -(0.034154-0.009)])
+
+measured_R = np.array([0, 0, 0, 1, # quat x y z w, almost identity,updated on 07.13
+     0.024, -0.05, 0.00922])
+measured_R = [ 5.08520173e-03,-1.65959569e-03, 1.99620783e-04, 9.99997336e-01, # updated on 07.16, optimized R from fit_R.py
+           2.27369052e-02,-5.10897261e-02, 0.01059545]
 
 measured_FK = np.array([
      # link twist (alpha); link length (a);  joint offset (d)
@@ -88,22 +91,18 @@ measured_FK = np.array([
      np.pi,   0.3255,   0.0713,  # 9 10
      np.pi/2, 0,        0.1143, # 12 14
      np.pi/2, 0,        0.1143, # 15 17
-     -0.707,  0,   0, 0.707, 0.133, 0.0803, 0.025]) # 22 23 24 # from end to DH to tip
+     -0.707,  0,   0, 0.707, 0.1345, 0.0803, 0.025]) # 22 23 24 # from end to DH to tip
 
-optimized_FK = np.array([
- 0.00000000902663874000, 0.00000000000000000000,
- 0.09669200429999999513, 1.57079627999999993371,
- 0.00000000000000000000, 0.08259997319999999588,
- 3.12226253999999991962, 0.32457626000000000532,
- 0.04510001979999998800, 3.14159263999999982531,
- 0.33232171300000001857, 0.07130004659999999994,
- 1.55818177000000002153, 0.00000000000000000000,
- 0.11430068999999999646, 1.57079629000000009498,
- 0.00000000000000000000, 0.11281335300000000510,
- -0.70699999999999996181, 0.00000000000000000000,
- 0.00000000000000000000, 0.70699999999999996181,
- 0.13346192200000001060, 0.08030005510000000346,
- 0.02351335309999999859])
+optimized_FK=np.array([
+ 0.00001144395127011013, 0.00000000000000000000, 0.09651056879003427902,
+ 1.56943391799985154655, 0.00000000000000000000, 0.08260195658930005735,
+ 3.12967418869251368108, 0.32789702729634911949, 0.04514666736869632491,
+ 3.14175777575516157469, 0.33713849030657716543, 0.07134471077939627537,
+ 1.54471075331525287133, 0.00000000000000000000, 0.11430000000262736937,
+ 1.57066331078897025719, 0.00000000000000000000, 0.11347640161675999482,
+ -0.70699999999999996181, 0.00000000000000000000, 0.00000000000000000000,
+ 0.70699999999999996181, 0.13229547969599614321, 0.07920594019758743498,
+ 0.02417640155436625096])
 
 def optimize_R_using_hebi_FK(list_m6, list_tip, initP=None):
   if initP is None:
@@ -111,7 +110,7 @@ def optimize_R_using_hebi_FK(list_m6, list_tip, initP=None):
 
   def cost_func(p, verbose=False):
     loss = []
-    p[0:4] = initP[0:4]
+    p[4:7] = measured_R[4:7]
     R = get_transformation_matrix(p)
     _m6 = np.ones(4)
     for m6, hebi_tip in zip(list_m6, list_tip):
@@ -131,7 +130,7 @@ def optimize_FK_only(list_m6_in_hebi_frame, list_jp, initP=None, sel_params=np.a
     loss = []
     p = np.array(defaultP)
     p[sel_params] = _p
-    p[8] += p[11] - measured_FK[11] + p[5] - measured_FK[5]
+    #p[8] += p[11] - measured_FK[11] + p[5] - measured_FK[5] ####### Consider add this constraint
     DH_params = p[:18].reshape(6,3)
     last_transformation = get_transformation_matrix(p[-7:])
     for m6, cp in zip(list_m6_in_hebi_frame, list_jp):
@@ -139,7 +138,9 @@ def optimize_FK_only(list_m6_in_hebi_frame, list_jp, initP=None, sel_params=np.a
       ee = ee.dot(last_transformation)
       prediction = ee[0:3, 3].reshape(3)
       loss.append(np.linalg.norm(prediction - m6))
-    deviation_loss = np.sum(np.exp(np.abs(p - measured_FK) * 10) - 1) / len(sel_params) / 10
+    deviation_loss = np.exp(np.abs(p - measured_FK) * 10) - 1
+    deviation_loss[2] = 0 # don't punish the joint offset on the base which determines the height
+    deviation_loss = np.sum(deviation_loss) / (len(deviation_loss) - 1) / 40
     print(deviation_loss, np.average(loss))
     return np.average(loss) + deviation_loss if not verbose else loss
   return initP, cost_func
@@ -214,21 +215,28 @@ if __name__ == '__main__':
   R_params, _ = optimize_R_using_hebi_FK(None, None)
   FK_params, _ = optimize_FK_only(None, None)
 
+  initP, cost_func = optimize_R_using_hebi_FK(list_m6, list_hebiee_tip)
+  init_distance = cost_func(initP, verbose=True)
+  print('Using HEBI default FK ...')
+  print('Before optimize, avg distance =', np.average(init_distance))
+  print('Before optimize, max distance = ', np.max(init_distance))
+  print('Before optimize, the worst datapoint is ', list_m6[np.argmax(init_distance)], list_hebiee_tip[np.argmax(init_distance)])
+  # print('All distance\n')
+  # print(init_distance)
   # ----------------------------------------------------------------------------
   # STEP1: Optimize R
   # ----------------------------------------------------------------------------
-  if True:
+  if False:
     print("\n\nOptimize the transformation matrix R from optitrack frame to hebi\n\n")
-    initP, cost_func = optimize_R_using_hebi_FK(list_m6, list_hebiee_tip)
-    init_distance = cost_func(initP, verbose=True)
-    print('Before optimize, avg distance =', np.average(init_distance))
-    print('Before optimize, max distance = ', np.max(init_distance))
-    print('Before optimize, the worst datapoint is ', list_m6[np.argmax(init_distance)], list_hebiee_tip[np.argmax(init_distance)])
     # scipy optimize
     res = scipy_optimize(cost_func, initP, method='L-BFGS-B', max_func=1000, iprint=10).x
     est_R = res
     est_R[0:4] = np.array(est_R[0:4]) / np.linalg.norm(est_R[0:4]) # normalize quat
     print("Estimated R from optitrack to base", est_R)
+    print("Compared with initial P:", initP)
+    newCost = cost_func(res, verbose=True)
+    print('After optimize, avg distance =', np.average(newCost))
+    print('After optimize, max distance = ', np.max(newCost))
     # cmaes optimize
     #res = cmaes(cost_func, initP)
     #res[0:4] = np.array(res[0:4]) / np.linalg.norm(res)
@@ -248,22 +256,58 @@ if __name__ == '__main__':
       print('Before optimize, avg distance =', np.average(initLoss))
       print('Before optimize, max distance = ', np.max(initLoss))
       res = scipy_optimize(cost_func, initP, method='L-BFGS-B', max_func=2000, iprint=20).x
+      # res =optimized_FK[sel_params]# used to find the outlier
       newCost = cost_func(res, verbose=True)
       print('After optimize, avg distance =', np.average(newCost))
       print('After optimize, max distance = ', np.max(newCost))
+
+      ## find the outlier
+      # idx = (-np.array(cost_optimized)).argsort()[:1000]
+      # cost_optimized=np.asarray(newCost)
+
+      # _idx=np.where(cost_optimized>=0.008)[0]
+      # print('the index of largest errors comes from these trials:',_idx)
+      # print('the number of them',_idx.shape[0])
+      # idx=np.sort(_idx)
+      # print('sorted index:',_idx)
+      # prev=_idx[0]
+      # exist_sencond_trial=False
+      # for _v in _idx[1:]:
+      #   if (_v-prev) != 1:
+      #     print("this could be a new trial",_v)
+      #     exist_sencond_trial=True
+      #   prev=_v
+      # if not exist_sencond_trial:
+      #   print("this is only one trial")
+
+      import seaborn as sns
+      import matplotlib.pyplot as plt
+      sns.distplot(newCost)
+      plt.show()
+      x = np.arange(len(newCost))
+      sns.jointplot(x=x, y=newCost)
+      plt.show()
+
       return res
 
     #b = [1,4,8,11,13,16,18,19,20,21] # not optimizing
-    a = [0, 2, 3, 5, 6, 7, 9, 10, 11, 12, 14, 15, 17, 22, 23, 24]
+    a = [0, 2, 3, 5, 6, 7, 9, 10, 11, 12, 14, 15, 17, 22, 23, 24] # optimize selective set
+    a=np.arange(25)
     for opt_params in [a]:
       new_FK_params = opt_fk(opt_params)
       FK_params[opt_params] = new_FK_params
-      FK_params[8] += FK_params[5] - measured_FK[5] + FK_params[11] - measured_FK[11]
 
-    np.set_printoptions(suppress=True, formatter={'float_kind':'{:.20f},'.format}, linewidth=50)
+      ##force the p[8] follow such rule if you add the constraint in cost fn
+      #FK_params[8] += FK_params[5] - measured_FK[5] + FK_params[11] - measured_FK[11]
+
+    np.set_printoptions(suppress=True, formatter={'float_kind':'{:.20f},'.format}, linewidth=80)
     print(FK_params)
     print("Changes")
     print(FK_params - measured_FK)
+    optimized_FK = FK_params
+
+
+  FK_params = optimized_FK
 
   # ----------------------------------------------------------------------------
   # STEP3: Optimize R and FK iteratively
@@ -283,6 +327,8 @@ if __name__ == '__main__':
         newCost = cost_func(R_params, verbose=True)
         print("New average distance", np.average(newCost))
         print("Max distance", np.max(newCost))
+        print('\n\n')
+        exit()
         list_m6_in_hebi_frame = get_m6_in_hebi_frame(list_m6, R_params)
         _, cost_func = optimize_FK_only(list_m6_in_hebi_frame, list_jp)
         FK_params = scipy_optimize(cost_func, FK_params, method='L-BFGS-B', max_func=1000, iprint=50).x

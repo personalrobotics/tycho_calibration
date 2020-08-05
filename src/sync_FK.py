@@ -105,7 +105,7 @@ def main():
     debug_counter = 100000
     # start rosbag play
 
-    for file in sorted(glob.glob(os.path.join(args.bag_folder, "*joints_m6.bag"))):
+    for file in sorted(glob.glob(os.path.join(args.bag_folder, "*pose.bag"))):
         print(file)
         prefix_name = file[:-13]
         print("Working on {}".format(prefix_name))
