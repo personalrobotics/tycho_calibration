@@ -105,3 +105,21 @@ Now with the updated FK, optimize R (all)
 Emmmm the rotation matrix has a small change of rotating y axis about 2.6 degress ...
  Perhaps later try instead optimize R only xyz?
 
+
+4.
+We collect a hundred of recordings where each recording fixed the robot position and lasted about 3 seconds.
+Collecting recordings this way could avoid data sync mismatch problem (the pair of robot position and M6 position might come from different timestep).
+We also focused on the workstation region (collected more data from that region).
+Unfortunately we accidentally deleted this set of recordings.
+We then used this new dataset for optimization.
+The updated FK ([
+ 0.00001144395127011013, 0.00000000000000000000, 0.09651056879003427902,
+  1.56943391799985154655, 0.00000000000000000000, 0.08260195658930005735,
+   3.12967418869251368108, 0.32789702729634911949, 0.04514666736869632491,
+    3.14175777575516157469, 0.33713849030657716543, 0.07134471077939627537,
+     1.54471075331525287133, 0.00000000000000000000, 0.11430000000262736937,
+      1.57066331078897025719, 0.00000000000000000000, 0.11347640161675999482,
+       -0.70699999999999996181, 0.00000000000000000000, 0.00000000000000000000,
+        0.70699999999999996181, 0.13229547969599614321, 0.07920594019758743498,
+         0.02417640155436625096])
+Avg distance is about 5~6 mm. Error around workstation is about 2~5mm. Observed extreme error of 11mm when the agent reached towards the bottom left region on the workstation.

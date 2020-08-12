@@ -22,6 +22,10 @@ This scripts calibrates 1) transformation from Optitrack frame to Hebi frame and
 
 - Optimize R only (optitrack transformation to hebi base frame) using hebi factory FK
 
-## Log
+## Tips
 
+1. When collecting recordings, place the robot at a fixed location, record, stop record, allow robot to move. This counts as one recording. You need enough recordings to cover the whole config space + you can favor the workstation space by collecting more data there.
 
+2. Please document your FK\_log in results/FK\_log.
+
+3. Once done, copy the parameters over to `hebi_env`.
