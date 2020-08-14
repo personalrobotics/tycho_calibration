@@ -78,10 +78,11 @@ def get_fk_tips(list_jp, FK_params):
 # ==============================================================
 
 
-measured_R = np.array([0, 0, 0, 1, # quat x y z w, almost identity,updated on 07.13
-     0.024, -0.05, 0.00922])
-measured_R = [ 5.08520173e-03,-1.65959569e-03, 1.99620783e-04, 9.99997336e-01, # updated on 07.16, optimized R from fit_R.py
-           2.27369052e-02,-5.10897261e-02, 0.01059545]
+measured_R = np.array([0, 0, 0, 1, # quat x y z w, almost identity
+     0,0,0])
+
+# 2020.08.13. yield from fit_R.py
+measured_R = np.array([0.00795607, 0.00529487, 0.01466389, 0.99984681, -1.07679705, 0.08733636, -0.02163])
 
 measured_FK = np.array([
      # link twist (alpha); link length (a);  joint offset (d)
@@ -110,7 +111,7 @@ def optimize_R_using_hebi_FK(list_m6, list_tip, initP=None):
 
   def cost_func(p, verbose=False):
     loss = []
-    p[4:7] = measured_R[4:7]
+    p[0:4] = measured_R[0:4] # FIX THE R ROTATION
     R = get_transformation_matrix(p)
     _m6 = np.ones(4)
     for m6, hebi_tip in zip(list_m6, list_tip):
@@ -238,15 +239,15 @@ if __name__ == '__main__':
     print('After optimize, avg distance =', np.average(newCost))
     print('After optimize, max distance = ', np.max(newCost))
     # cmaes optimize
-    #res = cmaes(cost_func, initP)
-    #res[0:4] = np.array(res[0:4]) / np.linalg.norm(res)
-    #print("CMEAS (perhaps more of a global optim)", res)
+    # res = cmaes(cost_func, initP)
+    # res[0:4] = np.array(res[0:4]) / np.linalg.norm(res)
+    # print("CMEAS (perhaps more of a global optim)", res)
     R_params = res
 
   # ----------------------------------------------------------------------------
   # STEP2: Optimize Hebi FK
   # ----------------------------------------------------------------------------
-  if True:
+  if False:
     print("\n\nOptimize FK function\n\n")
     def opt_fk(sel_params):
       print("Optimizing select parameters for FK, sel:", sel_params)
@@ -292,7 +293,7 @@ if __name__ == '__main__':
 
     #b = [1,4,8,11,13,16,18,19,20,21] # not optimizing
     a = [0, 2, 3, 5, 6, 7, 9, 10, 11, 12, 14, 15, 17, 22, 23, 24] # optimize selective set
-    a=np.arange(25)
+    # a=np.arange(25)
     for opt_params in [a]:
       new_FK_params = opt_fk(opt_params)
       FK_params[opt_params] = new_FK_params
@@ -313,6 +314,7 @@ if __name__ == '__main__':
   # STEP3: Optimize R and FK iteratively
   # ----------------------------------------------------------------------------
   if False:
+      FK_params = optimized_FK
       print("\n\nOptimize R and FK iteratively")
       initP, cost_func = optimize_FK_and_R(R_params, FK_params, list_m6, list_jp)
       initCost = cost_func(initP, verbose=True)
