@@ -9,7 +9,12 @@ def construct_parser():
     parser.add_argument('--bag_folder_location', type=str, default="/home/hebi/hebi/hebi_ws/src/hebi_teleop/recording/")
     parser.add_argument('--bag_folder_name', type=str, default="calibration")
     parser.add_argument('--save_file_name', type=str, default="data/m6_jps.csv")
+    parser.add_argument('-r','--cut_off', action='store_true')
     return parser
+
+CUTOFF_BEGINNING = 3                    # unit in nanoseconds (10^9)
+CUTOFF_LENGTH = CUTOFF_BEGINNING + 18   # unit in nanoseconds
+
 
 args = construct_parser().parse_args()
 assert(args.bag_folder_name != '')
@@ -67,12 +72,18 @@ def start_rosbag_play(file):
 def callback(*argv):
     global datapoint_count
     global rosbag_name
+    global start_timer
 
-    # TODO at the beginning of recording there can be wasted data,
-    # we might be able to detect: the End Effector movement is idle, skip this
     joint_state, m6_msg = argv[:2]
+    my_timestamp = m6_msg.header.stamp
 
-    #state_msg, command_msg = argv[2:4]
+    if args.cut_off:
+        if start_timer is None:
+            start_timer = my_timestamp
+        elapsed_time = (my_timestamp - start_timer).to_sec()
+        if elapsed_time < CUTOFF_BEGINNING or elapsed_time > CUTOFF_LENGTH:
+            return
+
     ball_point = m6_msg.point
     ball_loc = np.array([ball_point.x, ball_point.y, ball_point.z])
     joint_position=np.array([m for m in joint_state.position])
@@ -100,19 +111,23 @@ def init_subscriber():
 
 def main():
     # set up storage subscriber
-    global trajectory_count, datapoint_count, rosbag_name
+    global trajectory_count, datapoint_count, rosbag_name, start_timer
     init_subscriber()
-    debug_counter = 100000
+    debug_counter = 1000000000000
     # start rosbag play
 
     for file in sorted(glob.glob(os.path.join(args.bag_folder, "*pose.bag"))):
         print(file)
         prefix_name = file[:-13]
         print("Working on {}".format(prefix_name))
+        start_timer = None
         rosbag_name = os.path.basename(prefix_name)
         rosbag_player = start_rosbag_play(file)
         rosbag_player.communicate() # wait for rosbag play to finish
         print("-> accumulated {} datapoints".format(datapoint_count))
+        debug_counter -= 1
+        if debug_counter <= 0:
+            break
 
     label_file.close()
     print("finished")
