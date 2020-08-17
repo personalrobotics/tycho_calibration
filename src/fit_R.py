@@ -39,9 +39,9 @@ def fancy_cost_fn(list_m6, params, verbose=None):
   heights = [p[2] for p in transformed_points]
   projected_points = [(p[0],p[1]) for p in transformed_points]
   projected_distance = [np.linalg.norm(p) for p in projected_points]
-  print(np.std(projected_distance), np.max(np.abs(projected_distance - np.average(projected_distance))),
-        np.std(heights), np.max(np.abs(heights - np.average(heights))))
-  fancy_cost = np.std(projected_distance) + 2 * np.std(heights)
+  #print(np.std(projected_distance), np.max(np.abs(projected_distance - np.average(projected_distance))),
+  #      np.std(heights), np.max(np.abs(heights - np.average(heights))))
+  fancy_cost = np.std(projected_distance) + 10 * np.std(heights)
   return (projected_distance, heights) if verbose is True else fancy_cost
 
 def scipy_optimize(func, initP, method='L-BFGS-B', max_func=15000, iprint=1, save=None):
@@ -50,16 +50,36 @@ def scipy_optimize(func, initP, method='L-BFGS-B', max_func=15000, iprint=1, sav
   print("Scipy optimized params", res.x)
   (save and np.savetxt('results/'+save, res.x, delimiter=',',fmt='%f'))
   return res.x
+
+def cmaes(func, initP, var=1):
+  import cma
+  es = cma.CMAEvolutionStrategy(initP, var)
+  best_so_far = func(initP)
+  best_params = initP
+  while not es.stop():
+    solutions = es.ask()
+    f_vals = [func(s) for s in solutions]
+    es.tell(solutions, f_vals)
+    if np.min(f_vals) < best_so_far:
+      best_so_far = np.min(f_vals)
+      best_params = solutions[np.argmin(f_vals)]
+      print('CMAES found a new set of best params, achieving', best_so_far)
+      print('params', best_params)
+    es.logger.add()
+    es.disp()
+  es.result_pretty()
+  return best_params
+
 if __name__ == '__main__':
   np.set_printoptions(suppress=True, formatter={'float_kind':'{:.8f},'.format}, linewidth=80)
 
   # Load data from CSV that contains m6 (optitrack tip location) and jp (joint positions)
   df = pd.read_csv('data/m6_circle.csv')
   list_m6 = [np.fromstring(r[1:-1], dtype=np.float, sep=' ') for r in df['m6'].to_list()] #[1:-1] to exclude '['']'
-  list_m6 = list_m6[500:1500]
+  list_m6 = list_m6[500:-500]
   cost_func = partial(cost_fn, list_m6)
 
-  # Closed form solution .... minimize *vertical* distance
+  # Approach 1: Closed form solution .... minimize *vertical* distance
   # A = np.array(list_m6)
   # A[:, 2] = 1
   # B = np.array([m[2] for m in list_m6]).reshape(-1)
@@ -69,38 +89,44 @@ if __name__ == '__main__':
   # costs = [a*x + b*y + c - z for (x,y,z) in list_m6]
   # print(np.average(costs), np.max(costs))
 
-  # Optimization solution .. minimize *perpendicular* distance
+  # Approach 2: Optimization solution .. minimize *perpendicular* distance
   # heights = np.array([m[2] for m in list_m6]).reshape(-1)
   # initP = np.array([0, 0, 0, np.average(heights)])
   # res = scipy_optimize(cost_func, initP)
   # newCost = cost_func(res, verbose=True)
   # print('Avg cost {} Max cost {}'.format(np.average(newCost),np.max(newCost)))
 
+  # Approach 3: Minimize projected distance and heights
+  heights = np.array([m[2] for m in list_m6]).reshape(-1)
+  initP = np.array([0,0,0,1, -1.07 , 0.08, np.average(heights)])
   fancy_cost_func = partial(fancy_cost_fn, list_m6)
-  initP = np.array([0, 0, 0, 1,
-                    0.024, -0.05, 0.01059545])
-
   res = scipy_optimize(fancy_cost_func, initP)
+  #res = cmaes(fancy_cost_func, initP)
   res[0:4] = res[0:4] / np.linalg.norm(res[0:4])
-  print('estimated rotation')
+  print('Optimized R', res)
+  print('rotation matrix')
   print(scipyR.from_quat(res[0:4]).as_dcm())
-  print(res)
+  print('in quaternion:',res[0:4])
+
   proj_dis, heights = fancy_cost_func(res, verbose=True)
   print('proj_dis avg {} max {}'.format(np.average(proj_dis),np.max(proj_dis)))
   print('heights avg {} max {}'.format(np.average(heights),np.max(heights)))
 
-
   import seaborn as sns
   import matplotlib.pyplot as plt
   sns.distplot(heights)
+  plt.title("Projected heights")
   plt.show()
 
   x = np.arange(len(heights))
   sns.jointplot(x=x, y=heights)
+  plt.title("Height per point")
   plt.show()
 
   sns.distplot(proj_dis)
+  plt.title("Projected distance")
   plt.show()
 
   sns.jointplot(x=x, y=proj_dis)
+  plt.title("Projected distance to center of circle, per point")
   plt.show()
