@@ -112,33 +112,6 @@ def optimize_R_using_hebi_FK(list_m6, list_tip, initP=None):
     return np.average(loss) if not verbose else loss
   return initP, cost_func
 
-def optimize_FK_only(list_m6_in_hebi_frame, list_jp, initP=None, sel_params=np.arange(31)):
-  if initP is not None:
-    defaultP = np.array(initP)
-  else:
-    defaultP = np.array(measured_FK)
-  initP = defaultP[sel_params]
-  def cost_func(_p, verbose=False):
-    loss = []
-    p = np.array(defaultP)
-    p[sel_params] = _p
-    #p[8] += p[11] - measured_FK[11] + p[5] - measured_FK[5] ####### Consider add this constraint
-    DH_params = p[:24].reshape(6,4)
-    last_transformation = get_transformation_matrix(p[-7:])
-    for m6, cp in zip(list_m6_in_hebi_frame, list_jp):
-      ee = calculate_FK_transformation(DH_params, cp)
-      ee = ee.dot(last_transformation)
-      prediction = ee[0:3, 3].reshape(3)
-      loss.append(np.linalg.norm(prediction - m6))
-    # punish the deviation
-    deviation_loss = np.exp(np.abs(p - measured_FK) * 10) - 1
-    deviation_loss[2] = 0 # don't punish the joint offset on the base which determines the height
-    # TODO consider punish the theta_offset more heavily
-    deviation_loss = np.sum(deviation_loss) / (len(sel_params) - 1) / 40
-    #print(deviation_loss, np.average(loss))
-    return np.average(loss) + deviation_loss if not verbose else loss
-  return initP, cost_func
-
 def optimize_FK_and_R(initRparam, initFKparam, list_m6, list_jp):
   initP = np.hstack((initRparam, initFKparam)).reshape(-1)
   def cost_func(p, verbose=True):
@@ -156,6 +129,9 @@ def optimize_FK_and_R(initRparam, initFKparam, list_m6, list_jp):
       loss.append(np.linalg.norm(R.dot(m6)[0:3] - prediction))
     return np.average(loss) if not verbose else loss
   return initP, cost_func
+
+# --------------------------------------------------
+# Parallel optimization of FK
 
 from multiprocessing import Pool
 from functools import partial
@@ -190,6 +166,7 @@ def optimize_FK_only_parallel(list_m6_in_hebi_frame, list_jp, initP=None, sel_pa
     DH_params = p[:24].reshape(6,4)
     last_transformation = get_transformation_matrix(p[-7:])
 
+    # divide the workload
     my_func = partial(FK_cost_fn_parallel, DH_params, last_transformation, list_m6_in_hebi_frame, list_jp)
     n = len(list_m6_in_hebi_frame)
     n = (n//NUM_POOL) * NUM_POOL
@@ -200,10 +177,7 @@ def optimize_FK_only_parallel(list_m6_in_hebi_frame, list_jp, initP=None, sel_pa
     # punish the deviation
     deviation_loss = np.exp(np.abs(p - measured_FK) * 10) - 1
     deviation_loss[2] = 0 # don't punish the joint offset on the base which determines the height
-    deviation_loss[3] /= 3
-    _idx = np.array([7,11,15,19,23])
-    deviation_loss[_idx] *= 3
-    # TODO consider punish the theta_offset more heavily
+    deviation_loss[3] = 0 # don't punish the theta offset on the base to allow rotation around z-axis
     deviation_loss = np.sum(deviation_loss) / (len(sel_params) - 1) / 40
     print(deviation_loss, np.average(loss))
     return np.average(loss) + deviation_loss if not verbose else loss
@@ -261,7 +235,7 @@ if __name__ == '__main__':
 
   # dummy params
   R_params, _ = optimize_R_using_hebi_FK(None, None)
-  FK_params, _ = optimize_FK_only(None, None)
+  FK_params, _ = optimize_FK_only_parallel(None, None)
 
   initP, cost_func = optimize_R_using_hebi_FK(list_m6, list_hebiee_tip)
   init_distance = cost_func(initP, verbose=True)
@@ -296,71 +270,51 @@ if __name__ == '__main__':
   # ----------------------------------------------------------------------------
   if True:
     print("\n\nOptimize FK function\n\n")
+
+    from datetime import datetime
+
+    f = open('optimize_fk_{}.txt'.format(datetime.now().strftime("%m%d-%H.%M.%S")),'a')
+
     def opt_fk(sel_params):
       print("Optimizing select parameters for FK, sel:", sel_params)
+      print("Optimizing select parameters for FK, sel:", sel_params, file=f)
+
       list_m6_in_hebi_frame = get_m6_in_hebi_frame(list_m6, R_params)
       initP, cost_func = optimize_FK_only_parallel(list_m6_in_hebi_frame, list_jp, initP=FK_params, sel_params=sel_params)
 
-      # from timeit import default_timer as timer
-      # start_t = timer()
-      # for _ in range(4):
-      #   initLoss = cost_func(initP, verbose=False)
-      # print(timer() - start_t)
-      # return
-
       initLoss = cost_func(initP, verbose=True)
-      print('Before optimize, avg distance =', np.average(initLoss))
-      print('Before optimize, max distance = ', np.max(initLoss))
+      print('Before optimize, avg distance =', np.average(initLoss), file=f)
+      print('Before optimize, max distance = ', np.max(initLoss), file=f)
       res = scipy_optimize(cost_func, initP, method='L-BFGS-B', max_func=2000, iprint=20).x
-      # res =optimized_FK[sel_params]# used to find the outlier
       newCost = cost_func(res, verbose=True)
-      print('After optimize, avg distance =', np.average(newCost))
-      print('After optimize, max distance = ', np.max(newCost))
+      print('After optimize, avg distance =', np.average(newCost), file=f)
+      print('After optimize, max distance = ', np.max(newCost), file=f)
 
-      ## find the outlier
-      # idx = (-np.array(cost_optimized)).argsort()[:1000]
-      # cost_optimized=np.asarray(newCost)
+      return res, newCost
 
-      # _idx=np.where(cost_optimized>=0.008)[0]
-      # print('the index of largest errors comes from these trials:',_idx)
-      # print('the number of them',_idx.shape[0])
-      # idx=np.sort(_idx)
-      # print('sorted index:',_idx)
-      # prev=_idx[0]
-      # exist_sencond_trial=False
-      # for _v in _idx[1:]:
-      #   if (_v-prev) != 1:
-      #     print("this could be a new trial",_v)
-      #     exist_sencond_trial=True
-      #   prev=_v
-      # if not exist_sencond_trial:
-      #   print("this is only one trial")
+    a = [0, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 22, 23, 28, 29, 30] # optimize selective set
+
+    for opt_params in [a]:
+      new_FK_params, newCost = opt_fk(opt_params)
+      FK_params[opt_params] = new_FK_params
+      ##force the p[8] follow such rule if you add the constraint in cost fn
+      #FK_params[8] += FK_params[5] - measured_FK[5] + FK_params[11] - measured_FK[11]
+
+      np.set_printoptions(suppress=True, formatter={'float_kind':'{:.20f},'.format}, linewidth=90)
+      print(FK_params)
+      print(FK_params, file=f)
+      print("Changes from measured_FK", file=f)
+      print(FK_params - measured_FK, file=f)
 
       import seaborn as sns
       import matplotlib.pyplot as plt
       sns.distplot(newCost)
-      plt.show()
+      plt.savefig()
       x = np.arange(len(newCost))
       sns.jointplot(x=x, y=newCost)
       plt.show()
-      return res
 
-    a = [0, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 22, 23, 28, 29, 30] # optimize selective set
-    b = [0, 2, 3, 4, 6, 8, 9, 10, 12, 13, 14, 16, 18, 20, 22, 28, 29, 30] # optimize selective set
-
-    for opt_params in [b]:
-      new_FK_params = opt_fk(opt_params)
-      FK_params[opt_params] = new_FK_params
-
-      ##force the p[8] follow such rule if you add the constraint in cost fn
-      #FK_params[8] += FK_params[5] - measured_FK[5] + FK_params[11] - measured_FK[11]
-
-    np.set_printoptions(suppress=True, formatter={'float_kind':'{:.20f},'.format}, linewidth=80)
-    print(FK_params)
-    print("Changes")
-    print(FK_params - measured_FK)
-    optimized_FK = FK_params
-
+    f.close()
 
   FK_params = optimized_FK
 
