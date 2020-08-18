@@ -273,7 +273,9 @@ if __name__ == '__main__':
 
     from datetime import datetime
 
-    f = open('optimize_fk_{}.txt'.format(datetime.now().strftime("%m%d-%H.%M.%S")),'a')
+    fname = datetime.now().strftime("%m%d-%H.%M.%S")
+
+    f = open('optimize_fk_{}.txt'.format(fname), 'a')
 
     def opt_fk(sel_params):
       print("Optimizing select parameters for FK, sel:", sel_params)
@@ -309,10 +311,10 @@ if __name__ == '__main__':
       import seaborn as sns
       import matplotlib.pyplot as plt
       sns.distplot(newCost)
-      plt.savefig()
+      plt.savefig('optimize_FK_newCost-dist.{}.jpg'.format(fname))
       x = np.arange(len(newCost))
       sns.jointplot(x=x, y=newCost)
-      plt.show()
+      plt.savefig('optimize_FK_newCost-seq.{}.jpg'.format(fname))
 
     f.close()
 
