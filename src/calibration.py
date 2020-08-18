@@ -160,6 +160,8 @@ def optimize_FK_and_R(initRparam, initFKparam, list_m6, list_jp):
 from multiprocessing import Pool
 from functools import partial
 
+NUM_POOL = 8
+
 def FK_cost_fn_parallel(DH_params, last_transformation, list_m6_in_hebi_frame, list_jp, indexes):
   loss = []
   for idx in indexes:
@@ -170,6 +172,8 @@ def FK_cost_fn_parallel(DH_params, last_transformation, list_m6_in_hebi_frame, l
     prediction = ee[0:3, 3].reshape(3)
     loss.append(np.linalg.norm(prediction - m6))
   return loss
+
+pool = Pool(NUM_POOL)
 
 def optimize_FK_only_parallel(list_m6_in_hebi_frame, list_jp, initP=None, sel_params=np.arange(31)):
   if initP is not None:
@@ -186,8 +190,6 @@ def optimize_FK_only_parallel(list_m6_in_hebi_frame, list_jp, initP=None, sel_pa
     DH_params = p[:24].reshape(6,4)
     last_transformation = get_transformation_matrix(p[-7:])
 
-    NUM_POOL = 8
-    pool = Pool(NUM_POOL)
     my_func = partial(FK_cost_fn_parallel, DH_params, last_transformation, list_m6_in_hebi_frame, list_jp)
     n = len(list_m6_in_hebi_frame)
     n = (n//NUM_POOL) * NUM_POOL
@@ -198,9 +200,12 @@ def optimize_FK_only_parallel(list_m6_in_hebi_frame, list_jp, initP=None, sel_pa
     # punish the deviation
     deviation_loss = np.exp(np.abs(p - measured_FK) * 10) - 1
     deviation_loss[2] = 0 # don't punish the joint offset on the base which determines the height
+    deviation_loss[3] /= 3
+    _idx = np.array([7,11,15,19,23])
+    deviation_loss[_idx] *= 3
     # TODO consider punish the theta_offset more heavily
     deviation_loss = np.sum(deviation_loss) / (len(sel_params) - 1) / 40
-    #print(deviation_loss, np.average(loss))
+    print(deviation_loss, np.average(loss))
     return np.average(loss) + deviation_loss if not verbose else loss
   return initP, cost_func
 
