@@ -239,7 +239,9 @@ if __name__ == '__main__':
   print("first jp", list_jp[0])
 
   # Extract Hebi Default FK EE
-  list_hebiee = get_hebi_fk(list_jp, arm_hrdf='/home/hebi/hebi/hebi_ws/src/hebi_teleop/gains/chopstick7D.hrdf')
+  from hebi_env.utils import get_gains_path
+  hrdf_file, _ = get_gains_path()
+  list_hebiee = get_hebi_fk(list_jp, arm_hrdf=hrdf_file)
   # expecting hebiee to be at where the chopstick holder touch the bottom plate, should be defined in arm_container
   list_hebiee_tip = get_hebi_fk_tips(list_hebiee)
   print("first Hebi EE\n", list_hebiee[0])
@@ -285,15 +287,16 @@ if __name__ == '__main__':
     def opt_fk(sel_params):
       print("Optimizing select parameters for FK, sel:", sel_params)
       list_m6_in_hebi_frame = get_m6_in_hebi_frame(list_m6, R_params)
-      initP, cost_func = optimize_FK_only(list_m6_in_hebi_frame, list_jp, initP=FK_params, sel_params=sel_params)
+      initP, cost_func = optimize_FK_only_parallel(list_m6_in_hebi_frame, list_jp, initP=FK_params, sel_params=sel_params)
 
       # from timeit import default_timer as timer
       # start_t = timer()
       # for _ in range(4):
-      #   initLoss = cost_func(initP, verbose=True)
+      #   initLoss = cost_func(initP, verbose=False)
       # print(timer() - start_t)
       # return
 
+      initLoss = cost_func(initP, verbose=True)
       print('Before optimize, avg distance =', np.average(initLoss))
       print('Before optimize, max distance = ', np.max(initLoss))
       res = scipy_optimize(cost_func, initP, method='L-BFGS-B', max_func=2000, iprint=20).x
