@@ -10,7 +10,8 @@ from functools import partial
 # Utilities for cost function
 # ==============================================================
 
-def get_DH_transformation(alpha,a,theta,d):
+def get_DH_transformation(alpha,a,_theta,d,theta_offset=0):
+  theta = _theta + theta_offset
   # Given the DH link construct the transformation matrix
   rot = np.array([[np.cos(theta), -np.sin(theta), 0],
                  [np.sin(theta)*np.cos(alpha), np.cos(theta)*np.cos(alpha), -np.sin(alpha)],
@@ -32,8 +33,8 @@ def get_transformation_matrix(params):
 def calculate_FK_transformation(FKparams, joint_position):
   # Given a list of FKparams, shape N by 3, return transformation
   ee = np.eye(4)
-  for (alpha, a, d), theta in zip(FKparams, joint_position):
-    ee = ee.dot(get_DH_transformation(alpha, a, theta, d))
+  for (alpha, a, d, offset), theta in zip(FKparams, joint_position):
+    ee = ee.dot(get_DH_transformation(alpha, a, theta, d, offset))
   return ee
 
 def get_hebi_fk(joint_positions, arm_hrdf):
@@ -64,7 +65,7 @@ def get_m6_in_hebi_frame(list_m6, R_params):
   return list_m6_in_hebi_frame
 
 def get_fk_tips(list_jp, FK_params):
-  DH_params = np.reshape(FK_params[:18], (6,3)) # each link is represented by 3 params
+  DH_params = np.reshape(FK_params[:24], (6,4)) # each link is represented by 4 params
   last_transformation = get_transformation_matrix(FK_params[-7:])
   list_fk_tips = []
   for jp in list_jp:
@@ -77,7 +78,6 @@ def get_fk_tips(list_jp, FK_params):
 # Optimization cost and initial params
 # ==============================================================
 
-
 measured_R = np.array([0, 0, 0, 1, # quat x y z w, almost identity
      0,0,0])
 
@@ -85,25 +85,16 @@ measured_R = np.array([0, 0, 0, 1, # quat x y z w, almost identity
 measured_R = np.array([0.00795607, 0.00529487, 0.01466389, 0.99984681, -1.07679705, 0.08733636, -0.02163])
 
 measured_FK = np.array([
-     # link twist (alpha); link length (a);  joint offset (d)
-     0,       0,        0.101, # 0 2
-     np.pi/2, 0,        0.0826, # 3 5
-     np.pi,   0.3255,   0.0451, # 6 7
-     np.pi,   0.3255,   0.0713,  # 9 10
-     np.pi/2, 0,        0.1143, # 12 14
-     np.pi/2, 0,        0.1143, # 15 17
-     -0.707,  0,   0, 0.707, 0.1345, 0.0803, 0.025]) # 22 23 24 # from end to DH to tip
+     # link twist (alpha); link length (a);  joint offset (d); theta_offset;
+     0,       0,        0.101,  0, # 0  x  2  3
+     np.pi/2, 0,        0.0826, 0, # 4  x  6  7
+     np.pi,   0.3255,   0.0451, 0, # 8  9  10 11
+     np.pi,   0.3255,   0.0713, 0, # 12 13 14 15
+     np.pi/2, 0,        0.1143, 0, # 16 x  18 19
+     np.pi/2, 0,        0.1143, 0, # 20 x  22 23
+     -0.707,  0,   0, 0.707, 0.1345, 0.0803, 0.025]) # x x x x 28 29 30 # from end to DH to tip
 
-optimized_FK=np.array([
- 0.00001144395127011013, 0.00000000000000000000, 0.09651056879003427902,
- 1.56943391799985154655, 0.00000000000000000000, 0.08260195658930005735,
- 3.12967418869251368108, 0.32789702729634911949, 0.04514666736869632491,
- 3.14175777575516157469, 0.33713849030657716543, 0.07134471077939627537,
- 1.54471075331525287133, 0.00000000000000000000, 0.11430000000262736937,
- 1.57066331078897025719, 0.00000000000000000000, 0.11347640161675999482,
- -0.70699999999999996181, 0.00000000000000000000, 0.00000000000000000000,
- 0.70699999999999996181, 0.13229547969599614321, 0.07920594019758743498,
- 0.02417640155436625096])
+optimized_FK=None
 
 def optimize_R_using_hebi_FK(list_m6, list_tip, initP=None):
   if initP is None:
@@ -121,30 +112,40 @@ def optimize_R_using_hebi_FK(list_m6, list_tip, initP=None):
     return np.average(loss) if not verbose else loss
   return initP, cost_func
 
-def optimize_FK_only(list_m6_in_hebi_frame, list_jp, initP=None, sel_params=np.arange(25)):
+def optimize_FK_only(list_m6_in_hebi_frame, list_jp, initP=None, sel_params=np.arange(31)):
   if initP is not None:
     defaultP = np.array(initP)
   else:
-    defaultP = np.array(optimized_FK)
+    defaultP = np.array(measured_FK)
   initP = defaultP[sel_params]
   def cost_func(_p, verbose=False):
     loss = []
     p = np.array(defaultP)
     p[sel_params] = _p
     #p[8] += p[11] - measured_FK[11] + p[5] - measured_FK[5] ####### Consider add this constraint
-    DH_params = p[:18].reshape(6,3)
+    DH_params = p[:24].reshape(6,4)
     last_transformation = get_transformation_matrix(p[-7:])
     for m6, cp in zip(list_m6_in_hebi_frame, list_jp):
       ee = calculate_FK_transformation(DH_params, cp)
       ee = ee.dot(last_transformation)
       prediction = ee[0:3, 3].reshape(3)
       loss.append(np.linalg.norm(prediction - m6))
+    # punish the deviation
     deviation_loss = np.exp(np.abs(p - measured_FK) * 10) - 1
     deviation_loss[2] = 0 # don't punish the joint offset on the base which determines the height
-    deviation_loss = np.sum(deviation_loss) / (len(deviation_loss) - 1) / 40
-    print(deviation_loss, np.average(loss))
+    # TODO consider punish the theta_offset more heavily
+    deviation_loss = np.sum(deviation_loss) / (len(sel_params) - 1) / 40
+    #print(deviation_loss, np.average(loss))
     return np.average(loss) + deviation_loss if not verbose else loss
   return initP, cost_func
+
+def FK_cost_fn_parallel(list_m6_in_hebi_frame, list_jp, DH_params, last_transformation, idx):
+  m6 = list_m6_in_hebi_frame[idx]
+  cp = list_jp[idx]
+  ee = calculate_FK_transformation(DH_params, cp)
+  ee = ee.dot(last_transformation)
+  prediction = ee[0:3, 3].reshape(3)
+  return np.linalg.norm(prediction - m6)
 
 def optimize_FK_and_R(initRparam, initFKparam, list_m6, list_jp):
   initP = np.hstack((initRparam, initFKparam)).reshape(-1)
@@ -162,6 +163,38 @@ def optimize_FK_and_R(initRparam, initFKparam, list_m6, list_jp):
       prediction = ee[0:3, 3].reshape(3)
       loss.append(np.linalg.norm(R.dot(m6)[0:3] - prediction))
     return np.average(loss) if not verbose else loss
+  return initP, cost_func
+
+from multiprocessing import Pool
+from functools import partial
+
+def optimize_FK_only_parallel(list_m6_in_hebi_frame, list_jp, initP=None, sel_params=np.arange(31)):
+  if initP is not None:
+    defaultP = np.array(initP)
+  else:
+    defaultP = np.array(measured_FK)
+  initP = defaultP[sel_params]
+
+  def cost_func(_p, verbose=False):
+    loss = []
+    p = np.array(defaultP)
+    p[sel_params] = _p
+    #p[8] += p[11] - measured_FK[11] + p[5] - measured_FK[5] ####### Consider add this constraint
+    DH_params = p[:24].reshape(6,4)
+    last_transformation = get_transformation_matrix(p[-7:])
+
+    pool = Pool(5)
+    my_func = partial(FK_cost_fn_parallel, list_m6_in_hebi_frame, list_jp, DH_params, last_transformation)
+    loss = pool.map(my_func, range(len(list_m6_in_hebi_frame)))
+    loss = np.array(loss)
+
+    # punish the deviation
+    deviation_loss = np.exp(np.abs(p - measured_FK) * 10) - 1
+    deviation_loss[2] = 0 # don't punish the joint offset on the base which determines the height
+    # TODO consider punish the theta_offset more heavily
+    deviation_loss = np.sum(deviation_loss) / (len(sel_params) - 1) / 40
+    #print(deviation_loss, np.average(loss))
+    return np.average(loss) + deviation_loss if not verbose else loss
   return initP, cost_func
 
 # ==============================================================
@@ -247,13 +280,20 @@ if __name__ == '__main__':
   # ----------------------------------------------------------------------------
   # STEP2: Optimize Hebi FK
   # ----------------------------------------------------------------------------
-  if False:
+  if True:
     print("\n\nOptimize FK function\n\n")
     def opt_fk(sel_params):
       print("Optimizing select parameters for FK, sel:", sel_params)
       list_m6_in_hebi_frame = get_m6_in_hebi_frame(list_m6, R_params)
       initP, cost_func = optimize_FK_only(list_m6_in_hebi_frame, list_jp, initP=FK_params, sel_params=sel_params)
-      initLoss = cost_func(initP, verbose=True)
+
+      # from timeit import default_timer as timer
+      # start_t = timer()
+      # for _ in range(4):
+      #   initLoss = cost_func(initP, verbose=True)
+      # print(timer() - start_t)
+      # return
+
       print('Before optimize, avg distance =', np.average(initLoss))
       print('Before optimize, max distance = ', np.max(initLoss))
       res = scipy_optimize(cost_func, initP, method='L-BFGS-B', max_func=2000, iprint=20).x
@@ -288,13 +328,12 @@ if __name__ == '__main__':
       x = np.arange(len(newCost))
       sns.jointplot(x=x, y=newCost)
       plt.show()
-
       return res
 
-    #b = [1,4,8,11,13,16,18,19,20,21] # not optimizing
-    a = [0, 2, 3, 5, 6, 7, 9, 10, 11, 12, 14, 15, 17, 22, 23, 24] # optimize selective set
-    # a=np.arange(25)
-    for opt_params in [a]:
+    a = [0, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 22, 23, 28, 29, 30] # optimize selective set
+    b = [0, 2, 3, 4, 6, 8, 9, 10, 12, 13, 14, 16, 18, 20, 22, 28, 29, 30] # optimize selective set
+
+    for opt_params in [b]:
       new_FK_params = opt_fk(opt_params)
       FK_params[opt_params] = new_FK_params
 
