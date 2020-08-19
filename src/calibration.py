@@ -82,7 +82,8 @@ measured_R = np.array([0, 0, 0, 1, # quat x y z w, almost identity
      0,0,0])
 
 # 2020.08.13. yield from fit_R.py
-measured_R = np.array([0.00795607, 0.00529487, 0.01466389, 0.99984681, -1.07679705, 0.08733636, -0.02163])
+# 2020.08.17. Manually offset Z
+measured_R = np.array([0.00795607, 0.00529487, 0.01466389, 0.99984681, -1.07679705, 0.08733636, -0.02163 + 0.0162])
 
 measured_FK = np.array([
      # link twist (alpha); link length (a);  joint offset (d); theta_offset;
