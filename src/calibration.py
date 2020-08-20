@@ -94,7 +94,7 @@ measured_FK = np.array([
      np.pi/2, 0,        0.1143, 0, # 16 x  18 19
      np.pi/2, 0,        0.1143, 0, # 20 x  22 23
      -0.707,  0,   0, 0.707, 0.1345, 0.0803, 0.025]) # x x x x 28 29 30 # from end to DH to tip
-
+# Note the DH transformation for the 6 joints moves to the intersection of wirst4 and chop joint
 optimized_FK=None
 
 def optimize_R_using_hebi_FK(list_m6, list_tip, initP=None):
