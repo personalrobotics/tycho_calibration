@@ -6,14 +6,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import argparse
 def construct_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--bag_folder_location', type=str, default="/home/hebi/hebi/hebi_ws/src/hebi_teleop/recording/")
+    parser.add_argument('--bag_folder_location', type=str, default="/home/prl/hebi_ws/src/hebi_teleop/recording/")
     parser.add_argument('--bag_folder_name', type=str, default="calibration")
-    parser.add_argument('--save_file_name', type=str, default="data/m6_jps.csv")
+    parser.add_argument('--save_file_name', type=str, default="data/ball_and_jointpos.csv")
     parser.add_argument('-r','--cut_off', action='store_true')
     return parser
 
-CUTOFF_BEGINNING = 3                    # unit in nanoseconds (10^9)
-CUTOFF_LENGTH = CUTOFF_BEGINNING + 18   # unit in nanoseconds
+CUTOFF_BEGINNING = 3 * 10^8                    # unit in nanoseconds (10^9 nanoseconds = 1 second)
+CUTOFF_LENGTH = CUTOFF_BEGINNING + 5 * 10^8   # unit in nanoseconds
 
 
 args = construct_parser().parse_args()
@@ -32,7 +32,6 @@ class bcolors:
     UNDERLINE = '\033[4m'
 print(bcolors.BOLD + bcolors.FAIL + "[WARNING]: PLEASE CLOSE ANY ROS TOPIC !!!!!" + bcolors.ENDC)
 
-from builtins import input
 from subprocess import Popen, STDOUT, PIPE
 import rospy
 import message_filters
@@ -46,8 +45,9 @@ print(label_name)
 
 if os.path.exists(label_name):
     print("Label file or image folder already exists!"
-          "Quit now to prevent overwriting.")
-    input("Press Enter to continue...")
+          "Quit now to prevent overwriting."
+          "Press Enter to continue...")
+    raw_input()
 label_file = open(label_name, mode='w')
 writer = csv.writer(label_file, delimiter = ',')
 
@@ -60,7 +60,7 @@ def write_csv_header(writer):
     #misc_fieldnames = [[['{}_{}{}'.format(_t,_pve,i) for i in range(7)] for _pve in ['p','v','e']] for _t in ['state','cmd']]
     #misc_fieldnames = [sum(x, []) for x in misc_fieldnames]
     #misc_fieldnames = sum(misc_fieldnames, [])
-    fieldnames = ['id', 'joint_position', 'm6'] #+ misc_fieldnames
+    fieldnames = ['id', 'joint_position', 'ball_loc'] #+ misc_fieldnames
     writer.writerow(fieldnames)
 
 def start_rosbag_play(file):
@@ -74,8 +74,8 @@ def callback(*argv):
     global rosbag_name
     global start_timer
 
-    joint_state, m6_msg = argv[:2]
-    my_timestamp = m6_msg.header.stamp
+    joint_state, ball_msg = argv[:2]
+    my_timestamp = ball_msg.header.stamp
 
     if args.cut_off:
         if start_timer is None:
@@ -84,7 +84,7 @@ def callback(*argv):
         if elapsed_time < CUTOFF_BEGINNING or elapsed_time > CUTOFF_LENGTH:
             return
 
-    ball_point = m6_msg.point
+    ball_point = ball_msg.point
     ball_loc = np.array([ball_point.x, ball_point.y, ball_point.z])
     joint_position=np.array([m for m in joint_state.position])
     rowinfo = ([datapoint_count]
@@ -104,9 +104,9 @@ def init_subscriber():
     slop = 0.002# max delay (in seconds) that messages can still be sync
     optional_subs = []
 
-    M6_sub=message_filters.Subscriber('/M6/point', PointStamped)
+    ball_sub=message_filters.Subscriber('/Ball/point', PointStamped)
     ts = message_filters.ApproximateTimeSynchronizer(
-        [choppose_sub, M6_sub] , queue_size, slop)
+        [choppose_sub, ball_sub] , queue_size, slop)
     ts.registerCallback(callback)
 
 def main():
