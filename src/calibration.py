@@ -266,7 +266,7 @@ if __name__ == '__main__':
 
   # Make results folder
   from datetime import datetime
-  foldername = str(datetime.now().strftime("calib-%m%d-%H:%M")) + "STEP{}".format(args.step)
+  foldername = str(datetime.now().strftime("calib-%m%d-%H-%M")) + "-STEP{}".format(args.step)
   os.mkdir(foldername)
   f = open(os.path.join(foldername,'calibration.txt'),'a')
 
