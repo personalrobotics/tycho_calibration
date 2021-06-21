@@ -48,11 +48,13 @@ Throughout the doc, R = Optitrack transformation to hebi base frame.
 
 9. After you obtain the result, paste it in the the calibration script and run the script again with STEP 0 to visualize the quality of the transforamtion.
 
+10. Once done, copy the parameters over to `hebi_env`.
+
+11. Additionally, update the URDF model in `hebi_description`.
+
 
 ## Tips
 
-1. When collecting recording for DH links, it is preferred to record static pose. i.e. Place the robot at a fixed location, record, stop record, allow robot to move. This counts as one recording. You need enough recordings to cover the whole config space + you can favor the workstation space by collecting more data there.
+1. When collecting recording for DH links, it is preferred to record static pose. i.e. Place the robot at a fixed location, record, stop record quickly, allow robot to move. This counts as one recording. You need enough recordings to cover the whole config space + you can favor the workstation space by collecting more data there.
 
 2. Please document your FK\_log in results/FK\_log.
-
-3. Once done, copy the parameters over to `hebi_env`.
