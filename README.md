@@ -22,11 +22,11 @@ Throughout the doc, R = Optitrack transformation to hebi base frame.
 
 ## Hebi DH Links
 
-1. Use hebi_teleop teleoperation mode to record some movements. Preferably, record static poses.
+1. First, clean the residual offsets in hebi_env (set to zero). Then use hebi_teleop teleoperation mode to record some movements. Preferably, record static poses.
 
 2. Use sync_FK to turn to CSV.
 
-3. Measure the Hebi DH links and put in `src/calibration.py@line83:measured_FK`. Copy the fit R from above to `measured_R`. The height estimated can be off, for now we use a measured number from a while ago.
+3. Measure the Hebi DH links and put in `src/calibration.py@line83:measured_FK`. Copy the fit R from above to `measured_R`. The height estimated can be off, for now we use a measured number.
 
 4. Measure the last mile of transformation: from the last end effector to the tip of chopsticks (where the marker is placed).
 
@@ -40,7 +40,7 @@ Throughout the doc, R = Optitrack transformation to hebi base frame.
 
 - Optimize R only. NOT RECOMMENDED! Use Fit_R instead. Using hebi factory FK to optimize for R.
 
-6. Usually, we start with Optimize FK given R. And optionally optimize R and FK iteratively.
+6. Usually, we start with Optimize FK given R (Step 2). Optionally, optimize R and FK iteratively.
 
 7. In calibration script you can choose which parts of FK params to optimize. Note that the third and fourth of DH parameters (joint offset and theta offset) for joint 1 will help us combat measurement error and drifting-of-zero-point. You should always allow optimize them.
 
@@ -50,7 +50,7 @@ Throughout the doc, R = Optitrack transformation to hebi base frame.
 
 10. Once done, copy the parameters over to `hebi_env`.
 
-11. Additionally, update the URDF model in `hebi_description`.
+11. Additionally, use STEP 5 to generate an YAML. Paste to update the URDF model in `hebi_description`.
 
 
 ## Tips

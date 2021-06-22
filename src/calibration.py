@@ -18,9 +18,9 @@ from mpl_toolkits.mplot3d import Axes3D
 measured_R = np.array([0, 0, 0, 1, # quat x y z w, almost identity
      0,0,0])
 
-# 2021.06.17. yield from fit_R.py
-measured_R = np.array([0.00676513, 0.00737539, -0.00000007, 0.99994992,
-  -1.07381695, 0.17246796, -3.59076994])
+# 2021.06.21 from fit_R.py
+measured_R = np.array([0.00714843, 0.00664545, -0.00000020, 0.99995237,
+  -1.07350576, 0.17235089, 2.43135210])
 measured_R[-1] = -0.02163 + 0.0162 # Some measured data from a while ago
 
 measured_FK = np.array([
@@ -48,16 +48,15 @@ measured_FK[-3] = (measured_FK[-3]
 # It is probably better to fine tune this number as well in the optimization process
 
 # You can paste your optimized FK below
-optimized_FK = np.array([ # 2021 June 17
--0.00000452847303763299, 0.00000000000000000000, 0.09733548553913488888, -0.00504328027968394075,
- 1.57328913691636662620, 0.00000000000000000000, 0.08255875867815581914, 0.00354772527153443236,
- 3.14158674869767029492, 0.32833409613225311707, 0.04512702072955651622, -0.00050641125171762874,
- 3.13602573222181568724, 0.32644794670949184301, 0.07113028571325644145, -0.00427983074927896015,
- 1.57079632982114292261, 0.00000000000000000000, 0.11427777610318590185, 0.00322000371571766648,
- 1.56755540153143635429, 0.00000000000000000000, 0.11405494961070081206, -0.00000475168302866829,
+optimized_FK = np.array([ # 2021 June 21
+ -0.00046457626085699363, 0.00000000000000000000, 0.10150211960557554980, -0.02190870190122657865,
+ 1.57079115315484107995, 0.00000000000000000000, 0.08220017515303833233, -0.00889059579215141678,
+ 3.14304091575809030346, 0.32624426386008442691, 0.04544803470806729057, 0.00499185515808455750,
+ 3.13525427400942380274, 0.32755018637621818867, 0.07096225119083582333, -0.00677021524394086274,
+ 1.57079620883963033684, 0.00000000000000000000, 0.11430138826329204471, -0.00040271304424944560,
+ 1.57054043416849231640, 0.00000000000000000000, 0.11430111140998718000, -0.00000131560317569111,
  -0.70699999999999996181, 0.00000000000000000000, 0.00000000000000000000, 0.70699999999999996181,
- 0.11955803180975385636, 0.07886884674211469548, 0.02475494962342773136
- ])
+ 0.11932266562500976059, 0.07968843088402800812, 0.02500111140960649056, ])
 
 # ==============================================================
 # Utilities for cost function
@@ -186,6 +185,13 @@ def FK_cost_fn_parallel(DH_params, last_transformation, list_ball_in_hebi_frame,
 
 pool = Pool(NUM_POOL)
 
+def not_outlier(arr, allowable_deviation=3):
+  mean = np.mean(arr)
+  std = np.std(arr)
+  dis = abs(arr - mean)
+  not_outlier =  dis < allowable_deviation * std
+  return not_outlier
+
 def optimize_FK_only_parallel(list_ball_in_hebi_frame, list_jp, initP=None, sel_params=np.arange(31)):
   if initP is not None:
     defaultP = np.array(initP)
@@ -208,6 +214,7 @@ def optimize_FK_only_parallel(list_ball_in_hebi_frame, list_jp, initP=None, sel_
     indexes = np.arange(n).reshape(NUM_POOL,-1)
     pool_results = pool.map(my_func, indexes)
     loss = np.array(sum(pool_results, []))
+    loss = loss[not_outlier(loss)]
 
     # punish the deviation
     deviation_loss = np.exp(np.abs(p - measured_FK) * 10) - 1
@@ -256,6 +263,7 @@ def construct_parser():
     parser.add_argument('--csv', type=str, default="data/ball_and_jointpos.csv")
     parser.add_argument('--max_func', type=int, default=10000)
     parser.add_argument('-s','--step', type=int, default=0)
+    parser.add_argument('-f','--filter', type=float, default=0.)
     return parser
 
 if __name__ == '__main__':
@@ -266,9 +274,10 @@ if __name__ == '__main__':
 
   # Make results folder
   from datetime import datetime
-  foldername = str(datetime.now().strftime("calib-%m%d-%H-%M")) + "-STEP{}".format(args.step)
+  foldername = str(datetime.now().strftime("calib-%m%d-%H-%M-%S")) + "-STEP{}".format(args.step)
   os.mkdir(foldername)
   f = open(os.path.join(foldername,'calibration.txt'),'a')
+  print("Using CSV {}".format(args.csv), file=f)
 
   # Load data from CSV that contains ball (optitrack tip location) and jp (joint positions)
   df = pd.read_csv(args.csv)
@@ -278,16 +287,39 @@ if __name__ == '__main__':
   print("first ball", list_ball[0])
   print("first jp", list_jp[0])
 
+  # initialize the parameters to use the default dummy params
+  R_params, _ = optimize_R_using_hebi_FK(None, None)
+  FK_params, _ = optimize_FK_only_parallel(None, None)
+
+  # ===========================================================================
+  # Filter
+  # ---------------------------------------------------------------------------
+  if args.filter > 0:
+    print("Removing data points that differ from the existing FK")
+    print("Filter threshold:", args.filter)
+    print("Filter threshold:", args.filter, file=f)
+    fk_tips = get_fk_tips(list_jp, FK_params)
+    track_tips = get_ball_in_hebi_frame(list_ball, R_params)
+    diff = fk_tips - track_tips
+    diff_norm = np.linalg.norm(diff, axis=1)
+    val_idx = diff_norm < args.filter
+    old_datapoint_count = len(list_ball)
+    list_jp = np.array(list_jp)[val_idx]
+    list_ball = np.array(list_ball)[val_idx]
+    new_datapoint_count = len(list_ball)
+    print("Removing {} out of {} datapoints".format(
+        old_datapoint_count - new_datapoint_count,
+        old_datapoint_count))
+    print("Removing {} out of {} datapoints".format(
+        old_datapoint_count - new_datapoint_count,
+        old_datapoint_count), file=f)
+
   # Extract Hebi Default FK EE
   list_hebiee = get_hebi_fk(list_jp)
   # expecting hebiee to be at where the chopstick holder touch the bottom plate, should be defined in arm_container
   list_hebiee_tip = get_hebi_fk_tips(list_hebiee)
   print("first Hebi EE\n", list_hebiee[0])
   print("first Hebi calculated tip\n", list_hebiee_tip[0])
-
-  # initialize the parameters to use the default dummy params
-  R_params, _ = optimize_R_using_hebi_FK(None, None)
-  FK_params, _ = optimize_FK_only_parallel(None, None)
 
   initP, cost_func = optimize_R_using_hebi_FK(list_ball, list_hebiee_tip)
   init_distance = cost_func(initP, verbose=True)
@@ -439,3 +471,17 @@ if __name__ == '__main__':
     print('Before optimize, avg distance =', cost_func(initP))
     res = scipy_optimize(cost_func, initP, method='L-BFGS-B', max_func=30000, iprint=50).x
     print('Optimized distance', cost_func(res))
+
+  if args.step == 5:
+    import yaml
+    file_path = os.path.join(foldername, 'kinematic_parameters.yaml')
+    yaml_dict = {
+      'fk': optimized_FK.flatten().tolist(),
+      'alpha': optimized_FK[[0,4,8,12,16,20]].tolist(),
+      'a': optimized_FK[[1,5,9,13,17,21]].tolist(),
+      'd': optimized_FK[[2,6,10,14,18,22]].tolist(),
+      'trans': optimized_FK[[28, 29, 30]].tolist(),
+    }
+    with open(file_path, 'w') as yaml_file:
+      documents = yaml.dump(yaml_dict, yaml_file)
+    print("Wrote parameters to the yaml file")
