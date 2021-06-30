@@ -18,7 +18,7 @@ Throughout the doc, R = Optitrack transformation to hebi base frame.
 
 4. Paste the result figures and texts into the results folder and commmit.
 
-5. You will need to update: (1) the calibration script (2) hebi_env utils and (3) the teleop launch file.
+5. You will need to update: (1) the calibration script (2) hebi_env utils and (3) the launch file.
 
 ## Hebi DH Links
 
@@ -46,11 +46,15 @@ Throughout the doc, R = Optitrack transformation to hebi base frame.
 
 8. The cost function for optimizing FK will punish deviation from the supplied initial values. You can adjust the weight.
 
-9. After you obtain the result, paste it in the the calibration script and run the script again with STEP 0 to visualize the quality of the transforamtion.
+9. After you obtain the result:
 
-10. Once done, copy the parameters over to `hebi_env`.
+(1) paste it in the the calibration script
 
-11. Additionally, use STEP 5 to generate an YAML. Paste to update the URDF model in `hebi_description`.
+(2) run the script again with STEP 0 to visualize the quality of the transforamtion.
+
+(3) Once done, copy the parameters over to `hebi_env`.
+
+(4) use STEP 5 to generate an YAML. Paste to `hebi_description`. Update the URDF model by catkin clean and catkin build.
 
 
 ## Tips

@@ -133,7 +133,7 @@ if __name__ == '__main__':
   args = construct_parser().parse_args()
 
   from datetime import datetime
-  foldername = str(datetime.now().strftime("fitR-%m%d-%H:%M")) + ("CMAES" if args.cmaes else "LBFGS")
+  foldername = str(datetime.now().strftime("fitR-%m%d-%H-%M")) + ("CMAES" if args.cmaes else "LBFGS")
   os.mkdir(foldername)
   f = open(os.path.join(foldername,'eval.txt'),'a')
   print("Datafile: ", args.csv, "\nCMAES? ", args.cmaes, file=f)
