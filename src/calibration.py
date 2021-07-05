@@ -101,7 +101,7 @@ def calculate_FK_transformation(FKparams, joint_position):
   return ee
 
 def get_hebi_fk(joint_positions):
-  from hebi_env.arm_container import create_empty_robot_default_hrdf
+  from tycho_env.arm_container import create_empty_robot_default_hrdf
   arm = create_empty_robot_default_hrdf()
   return np.array([np.array(arm.get_FK_ee(p)) for p in joint_positions]) # data_size x 4 x 4
 
