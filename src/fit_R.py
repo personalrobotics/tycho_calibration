@@ -53,7 +53,7 @@ def get_transformation_matrix(plane_params, shift_params):
   # Given 7 params containing quat (x,y,z,w) and shift (x,y,z) return the transformation matrix
   qx,qy,qz,qw = plane_params
   x,y,z = shift_params
-  rot = scipyR.from_quat((qx, qy, qz, qw)).as_dcm() # scipy >=1.4.0 will always normalize quat ####!!!!! TODO DEBUG
+  rot = scipyR.from_quat((qx, qy, qz, qw)).as_matrix()
   trans = np.array([x,y,z]).reshape(3,1)
   last_row = np.array([[0, 0, 0, 1]])
   return np.vstack((np.hstack((rot, trans)),last_row))
@@ -211,7 +211,7 @@ if __name__ == '__main__':
   start_colorful()
   print('Optimized Rotation', res)
   print('Optimized Rotation', res, file=f)
-  print('Rotation in matrix form', scipyR.from_quat(res[0:4]).as_dcm())
+  print('Rotation in matrix form', scipyR.from_quat(res[0:4]).as_matrix())
   print('Rotation in quaternion', res[0:4])
 
   proj_r, heights, deviation = cost_func(res, verbose=True)

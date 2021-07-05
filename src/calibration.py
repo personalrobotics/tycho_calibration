@@ -88,7 +88,7 @@ def get_DH_transformation(alpha,a,_theta,d,theta_offset=0):
 def get_transformation_matrix(params):
   # Given 7 params containing quat (x,y,z,w) and shift (x,y,z) return transformation matrix
   qx,qy,qz,qw,x,y,z = params
-  rot = scipyR.from_quat((qx, qy, qz, qw)).as_dcm() # scipy >=1.4.0 will always normalize quat
+  rot = scipyR.from_quat((qx, qy, qz, qw)).as_matrix()
   trans = np.array([x,y,z]).reshape(3,1)
   last_row = np.array([[0, 0, 0, 1]])
   return np.vstack((np.hstack((rot, trans)),last_row))
