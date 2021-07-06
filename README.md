@@ -56,6 +56,9 @@ Throughout the doc, R = Optitrack transformation to the robot base frame.
 
 (4) use STEP 5 to generate an YAML. Paste to `tycho_description`. Update the URDF model by catkin clean and catkin build.
 
+## Training a neural network to predict the backlash
+
+After the above steps, call `python src/train_nn_backlash.py data/your_data.csv` to train a neural network to predict the backlash on each joint.
 
 ## Tips
 
