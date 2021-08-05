@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 from pylab import cm
 from mpl_toolkits.mplot3d import Axes3D
 
+from tycho_env.utils import get_DH_transformation, get_transformation_matrix
+
 # ==============================================================
 # Pre-set and initial params
 # ==============================================================
@@ -73,28 +75,9 @@ optimized_FK = np.array([ # 2021 June 25
 # Utilities for cost function
 # ==============================================================
 
-def get_DH_transformation(alpha,a,_theta,d,theta_offset=0):
-  theta = _theta + theta_offset
-  # Given the DH link construct the transformation matrix
-  rot = np.array([[np.cos(theta), -np.sin(theta), 0],
-                 [np.sin(theta)*np.cos(alpha), np.cos(theta)*np.cos(alpha), -np.sin(alpha)],
-                 [np.sin(theta)*np.sin(alpha), np.cos(theta)*np.sin(alpha), np.cos(alpha)]])
-
-  trans = np.array([a,-d*np.sin(alpha),np.cos(alpha)*d]).reshape(3,1)
-  last_row = np.array([[0, 0, 0, 1]])
-  m = np.vstack((np.hstack((rot, trans)),last_row))
-  return m
-
-def get_transformation_matrix(params):
-  # Given 7 params containing quat (x,y,z,w) and shift (x,y,z) return transformation matrix
-  qx,qy,qz,qw,x,y,z = params
-  rot = scipyR.from_quat((qx, qy, qz, qw)).as_matrix()
-  trans = np.array([x,y,z]).reshape(3,1)
-  last_row = np.array([[0, 0, 0, 1]])
-  return np.vstack((np.hstack((rot, trans)),last_row))
-
+# Note that this one also considers theta offset
 def calculate_FK_transformation(FKparams, joint_position):
-  # Given a list of FKparams, shape N by 3, return transformation
+  # Given a list of FKparams, shape N by 4, return transformation
   ee = np.eye(4)
   for (alpha, a, d, offset), theta in zip(FKparams, joint_position):
     ee = ee.dot(get_DH_transformation(alpha, a, theta, d, offset))
@@ -397,7 +380,7 @@ if __name__ == '__main__':
   # STEP2: Optimize Hebi FK
   # ----------------------------------------------------------------------------
   if args.step == 2:
-    print("\n\nOptimize FK function whihe fixing R\n\n")
+    print("\n\nOptimize FK function while fixing R\n\n")
 
     def opt_fk(sel_params):
       print("Optimizing select parameters for FK, sel:", sel_params)
