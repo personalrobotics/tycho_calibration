@@ -35,6 +35,31 @@ import pybullet as p
 import time
 import numpy as np
 
+SPHERES_CONFIG = [
+    # Link, transform, radius
+     [0, [1,0,0,0,-0.02,0,0.02], 0.065],
+     [2, [1,0,0,0,0.02,0,0], 0.105],
+     [2, [1,0,0,0,0.15,0,0.02], 0.04],
+     [2, [1,0,0,0,0.22,0,0.02], 0.04],
+     [2, [1,0,0,0,0.305,0,-0.02], 0.075],
+     [3, [1,0,0,0,0.07,0,0.02], 0.035],
+     [3, [1,0,0,0,0.131,0,0.02], 0.035],
+     [3, [1,0,0,0,0.1845,0,0.02], 0.035],
+     [3, [1,0,0,0,0.2415,0,0.02], 0.035],
+     [3, [1,0,0,0,0.30575,0,-0.01125], 0.061],
+     [4, [1,0,0,0,-0.01,-0.055,-0.01], 0.0555],
+     [4, [1,0,0,0,-0.04,-0.055,-0.01], 0.0455],
+     [5, [1,0,0,0, 0.01,-0.05,0], 0.05],
+     [5, [1,0,0,0, -0.03875,-0.055,-0.00125], 0.0425],
+     [6, [1,0,0,0, 0.0, 0.04375,-0.0025], 0.05],
+     [6, [1,0,0,0, -0.045, 0.06, 0.0025], 0.04],
+     # Chop ball
+     [6, [1,0,0,0, 0.118368, 0.07914739999999999, 0.024354999999999995], 0.0025],
+     [6, [1,0,0,0, -0.1181944999999989, 0.07914739999999999, 0.024354999999999995], 0.003],
+     [7, [1, 0, 0, 0, 0.11593750000000001, 0.0525, 0.023125], 0.0025],
+     [7, [1, 0, 0, 0, -0.09569449999999888, -0.04374999999999999, 0.0225], 0.00375],
+    ]
+
 class Sphere:
     def __init__(self, center, radius):
         self._center = np.asarray(center)
@@ -73,25 +98,35 @@ class Bullet:
         self.obstacle_ids = []
 
     def load_robot(self, path):
-        self.robot_id = p.loadURDF(path, useFixedBase=True, physicsClientId=self.clid)
+        self.robot_id = p.loadURDF(path,
+            useFixedBase=True, physicsClientId=self.clid)
         self.urdf_path = path
 
     def load_spheres(self, sphere_configs):
         self.sphere_configs = sphere_configs
 
-    def show_spheres(self, jp):
+    def show_spheres(self, jp, scolors='rainbow'):
 
         spheres = []
         for s in self.sphere_configs:
             loc = get_sphere_loc(jp, s[:-1])
             spheres.append(Sphere(loc, s[-1]))
 
+        if scolors is None:
+            scolors = [SPHERE_COLOR] * len(self.sphere_configs)
+        elif scolors == 'rainbow':
+            from colorsys import hls_to_rgb
+            scolors = np.zeros((len(self.sphere_configs), 4))
+            scolors[:, -1] = 0.5 # transparent
+            ending_hue = 6. / 7
+            scolors[:, 0:3] = [hls_to_rgb(ending_hue * s[0]/7, 0.5, 1) for s in self.sphere_configs]
+
         ids = []
-        for sphere in spheres:
+        for sphere, color in zip(spheres, scolors):
             obstacle_visual_id = p.createVisualShape(
                 shapeType=p.GEOM_SPHERE,
                 radius=sphere.radius,
-                rgbaColor=SPHERE_COLOR,
+                rgbaColor=color,
                 physicsClientId=self.clid,
             )
             #obstacle_collision_id = p.createCollisionShape(
@@ -130,7 +165,6 @@ class Bullet:
         return joint_positions
 
 
-
 def get_sphere_loc(joint_position, sphere_config):
     joint_id = sphere_config[0]
     last_transformation = get_transformation_matrix(sphere_config[1])
@@ -141,6 +175,45 @@ def get_sphere_loc(joint_position, sphere_config):
     ee = ee.dot(last_transformation)
     return ee[0:3, 3].reshape(3)
 
+
+def lineseg_dist(points, lineA, lineB):
+    distances = np.ones(len(points))
+    line = np.divide(lineB - lineA, np.linalg.norm(lineB - lineA))
+    # signed parallel distance components
+    s = np.dot(lineA - points, line)
+    t = np.dot(points - lineB, line)
+    inbtw_idx = np.logical_and(s > 0, t > 0)
+    if np.any(inbtw_idx):
+        distances[inbtw_idx] = np.cross(points[inbtw_idx] - lineA, line)
+    return distances
+
+def check_collision(joint_position, sphere_config):
+    num_spheres = len(sphere_config)
+    sphere_sizes = np.array([s[-1] for s in sphere_config])
+    # Grab ball location
+    sphere_locs = np.zeros((num_spheres,3))
+    for i, s in enumerate(sphere_config):
+        sphere_locs[i,:] = get_sphere_loc(joint_position, s[:-1])
+
+    # ball x ball
+    col_pairs = []
+    for i in range(num_spheres-2):
+      for j in range(i+2, num_spheres):
+        if sphere_config[j][0] <= sphere_config[i][0] + 1:
+          continue
+        print(f"Checking ball {i} and {j}")
+        dis = np.linalg.norm(sphere_locs[i] - sphere_locs[j])
+        if dis <= sphere_config[i][-1] + sphere_config[j][-1]:
+          print("-> Collide")
+          col_pairs.append((i,j))
+
+    # ball x line
+    print("Checking chopsticks")
+    dist_to_chop1 = lineseg_dist(sphere_locs[:-4],sphere_locs[-1], sphere_locs[-2])
+    dist_to_chop2 = lineseg_dist(sphere_locs[:-4],sphere_locs[-3], sphere_locs[-4])
+    print(np.argwhere(dist_to_chop1 <= sphere_sizes[:-4]))
+    print(np.argwhere(dist_to_chop2 <= sphere_sizes[:-4]))
+
 # Use n to select the next sphere
 if __name__ == '__main__':
     my_bullet = Bullet(gui=True)
@@ -148,101 +221,71 @@ if __name__ == '__main__':
 
     joint_positions = [MOVING_POSITION]
 
-    sphere_configs = [
-    # Link, transform, radius
-     [0, [1,0,0,0,-0.02,0,0.02], 0.065],
-     [2, [1,0,0,0,0.02,0,0], 0.105],
-     [2, [1,0,0,0,0.15,0,0.02], 0.04],
-     [2, [1,0,0,0,0.22,0,0.02], 0.04],
-     [2, [1,0,0,0,0.305,0,-0.02], 0.075],
-     [3, [1,0,0,0,0.07,0,0.02], 0.035],
-     [3, [1,0,0,0,0.131,0,0.02], 0.035],
-     [3, [1,0,0,0,0.1845,0,0.02], 0.035],
-     [3, [1,0,0,0,0.2415,0,0.02], 0.035],
-     [3, [1,0,0,0,0.30575,0,-0.01125], 0.061],
-     [4, [1,0,0,0,-0.005,-0.055,-0.01], 0.0555],
-     [4, [1,0,0,0,-0.04,-0.055,-0.01], 0.0455],
-     [5, [1,0,0,0, 0.01,-0.05,0], 0.05],
-     [5, [1,0,0,0, -0.03875,-0.055,-0.00125], 0.0425],
-     [6, [1,0,0,0, 0.0, 0.04375,-0.0025], 0.05],
-     [6, [1,0,0,0, -0.045, 0.06, 0.0025], 0.04],
-     [6, [1,0,0,0, 0.118368, 0.07914739999999999, 0.024354999999999995], 0.0025],
-     [6, [1,0,0,0, -0.1181944999999989, 0.07914739999999999, 0.024354999999999995], 0.003],
-     [7, [1, 0, 0, 0, 0.11593750000000001, 0.0525, 0.023125], 0.0025],
-     [7, [1, 0, 0, 0, -0.09569449999999888, -0.04374999999999999, 0.0225], 0.00375],
-    ]
-
-    tid = None
-
     refinement = 0.01
 
-    my_bullet.load_spheres(sphere_configs)
+    my_bullet.load_spheres(SPHERES_CONFIG)
+    my_bullet.marionette([MOVING_POSITION])
 
-    for jp in joint_positions:
-        my_bullet.marionette(jp)
+    cursor = 0
 
-        cursor = 0
+    keys = ''
+    while True:
+        keys = p.getKeyboardEvents()
+        p.stepSimulation()
+        time.sleep(0.01)
 
-        my_bullet.show_spheres(jp)
+        test_keys = ['q','n','1','2','3','4','5','6','7','8','o','a','r','9','0']
+        pressed_key = None
+        for _k in test_keys:
+            if ord(_k) in keys:
+                state = keys[ord(_k)]
+                if (state & p.KEY_WAS_RELEASED):
+                    pressed_key = _k
+                    break
 
-        keys = ''
-        while True:
-            keys = p.getKeyboardEvents()
-            p.stepSimulation()
-            time.sleep(0.01)
+        if pressed_key == None:
+            continue
+        elif pressed_key == 'q':
+            break
+        elif pressed_key == 'n':
+            cursor += 1
+        elif pressed_key == 'r':
+            jp = my_bullet.get_joint_positions()
+            my_bullet.clear_all_obstacles()
+            my_bullet.show_spheres(jp)
+            check_collision(jp, my_bullet.sphere_configs)
+        elif pressed_key in ['9','0']:
+            if pressed_key == '9':
+                refinement = refinement * 2
+            else:
+                refinement = refinement / 2
+            print("New refinement", refinement)
+        else:
+            cursor = cursor % len(my_bullet.obstacle_ids)
+            obj_id = my_bullet.obstacle_ids[cursor]
+            sconfig = my_bullet.sphere_configs[cursor]
 
-            test_keys = ['q','n','1','2','3','4','5','6','7','8','o','a','r','9','0']
-            pressed_key = None
-            for _k in test_keys:
-                if ord(_k) in keys:
-                    state = keys[ord(_k)]
-                    if (state & p.KEY_WAS_RELEASED):
-                        pressed_key = _k
-                        break
+            if pressed_key == 'a':
+                print(obj_id, sconfig)
 
-            if pressed_key == None:
-                continue
-            elif pressed_key == 'q':
-                break
-            elif pressed_key == 'n':
-                cursor += 1
-            elif pressed_key == 'r':
+            elif pressed_key in ['1','2','3','4','5','6']:
+                shift_idx = (int(pressed_key) -1 ) // 2
+                shift_amount = refinement * (int(pressed_key) % 2 - 0.5)
+                sconfig[1][4 + shift_idx] += shift_amount
+                new_loc = get_sphere_loc(jp, sconfig[:-1])
+                p.resetBasePositionAndOrientation(obj_id, new_loc,[0,0,0,1])
+
+            elif pressed_key in ['7', '8']:
                 jp = my_bullet.get_joint_positions()
+                sconfig[-1] += refinement * (int(pressed_key) - 7.5)
                 my_bullet.clear_all_obstacles()
                 my_bullet.show_spheres(jp)
-            elif pressed_key in ['9','0']:
-                if pressed_key == '9':
-                    refinement = refinement * 2
-                else:
-                    refinement = refinement / 2
-                print("New refinement", refinement)
-            else:
 
-                cursor = cursor % len(my_bullet.obstacle_ids)
-                obj_id = my_bullet.obstacle_ids[cursor]
-                sconfig = my_bullet.sphere_configs[cursor]
-
-                if pressed_key == 'a':
-                    print(obj_id, sconfig)
-
-
-                elif pressed_key in ['1','2','3','4','5','6']:
-                    shift_idx = (int(pressed_key) -1 ) // 2
-                    shift_amount = refinement * (int(pressed_key) % 2 - 0.5)
-                    sconfig[1][4 + shift_idx] += shift_amount
-                    new_loc = get_sphere_loc(jp, sconfig[:-1])
-                    p.resetBasePositionAndOrientation(obj_id, new_loc,[0,0,0,1])
-
-                elif pressed_key in ['7', '8']:
-                    sconfig[-1] += refinement * (int(pressed_key) - 7.5)
-                    my_bullet.clear_all_obstacles()
-                    my_bullet.show_spheres(jp)
-
-                elif pressed_key == 'o':
-                    c = p.getVisualShapeData(obj_id)[0][7]
-                    p.changeVisualShape(obj_id, -1,
-                        rgbaColor=(HIGHLIGHT_COLOR if c[0] < 1.
-                                                   else SPHERE_COLOR))
+            elif pressed_key == 'o':
+                c = p.getVisualShapeData(obj_id)[0][7]
+                p.changeVisualShape(obj_id, -1,
+                    rgbaColor=(HIGHLIGHT_COLOR if c[0] < 1.
+                                               else SPHERE_COLOR))
 
 
     my_bullet.clear_all_obstacles()

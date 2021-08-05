@@ -42,6 +42,8 @@ Throughout the doc, R = Optitrack transformation to the robot base frame.
 
 6. Usually, we start with Optimize FK given R (Step 2). Optionally, optimize R and FK iteratively.
 
+Examples:
+
 7. In calibration script you can choose which parts of FK params to optimize. Note that the third and fourth of DH parameters (joint offset and theta offset) for joint 1 will help us combat measurement error and drifting-of-zero-point. You should always allow optimize them.
 
 8. The cost function for optimizing FK will punish deviation from the supplied initial values. You can adjust the weight.
@@ -59,6 +61,11 @@ Throughout the doc, R = Optitrack transformation to the robot base frame.
 ## Training a neural network to predict the backlash
 
 After the above steps, call `python src/train_nn_backlash.py data/your_data.csv` to train a neural network to predict the backlash on each joint.
+
+## Create collision balls on top of the URDF model
+
+Clear cache `catkin clean` then run `catkin build` for this project to generate a new URDF model. Follow the
+instructions in `viz_collision_balls.py` to create collision balls.
 
 ## Tips
 
