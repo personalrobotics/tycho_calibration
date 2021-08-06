@@ -29,15 +29,18 @@ URDF_PATH = '/home/prl/tycho_ws/src/tycho_env/tycho_env/assets/hebi_pybullet.urd
 JOINT_IDX = [2, 4, 6, 8, 10, 12, 14]
 SPHERE_COLOR = [144.0/255,238.0/255,144.0/255, 0.5]
 HIGHLIGHT_COLOR = [1,1,1,0.5]
+USE_REAL_ROBOT = True
 
+import tycho_env
 from tycho_env.utils import DH_params, MOVING_POSITION, get_DH_transformation, get_transformation_matrix, calculate_FK_transformation
+import hebi
 import pybullet as p
 import time
 import numpy as np
 
 SPHERES_CONFIG = [
     # Link, transform, radius
-     [0, [1,0,0,0,-0.02,0,0.02], 0.065],
+     [0, [1,0,0,0,-0.02,0,0.02], 0.1], #, 0.065],
      [2, [1,0,0,0,0.02,0,0], 0.105],
      [2, [1,0,0,0,0.15,0,0.02], 0.04],
      [2, [1,0,0,0,0.22,0,0.02], 0.04],
@@ -76,7 +79,7 @@ class Sphere:
 
 class Bullet:
 
-    def __init__(self, gui=False):
+    def __init__(self, gui=False, real_robot=False):
         self.use_gui = gui
         if self.use_gui:
             self.clid = p.connect(p.GUI)
@@ -86,6 +89,11 @@ class Bullet:
         self.obstacle_ids = []
         self.obstacle_collision_ids = []
         self.sphere_configs = []
+
+        if real_robot:
+            self.arm = tycho_env.create_robot(dof=7)
+            self.feedback = hebi.GroupFeedback(7)
+            self.current_position = np.zeros(7)
 
     def __del__(self):
         p.disconnect(self.clid)
@@ -105,6 +113,14 @@ class Bullet:
     def load_spheres(self, sphere_configs):
         self.sphere_configs = sphere_configs
 
+    def gen_sphere_colors(self, n=None):
+        from colorsys import hls_to_rgb
+        scolors = np.zeros((len(self.sphere_configs), 4))
+        scolors[:, -1] = 0.3 # transparent
+        ending_hue = 6. / 7
+        scolors[:, 0:3] = [hls_to_rgb(ending_hue * s[0]/7, 0.5, 1) for s in self.sphere_configs]
+        return scolors if n is None else scolors[n]
+
     def show_spheres(self, jp, scolors='rainbow'):
 
         spheres = []
@@ -113,13 +129,8 @@ class Bullet:
             spheres.append(Sphere(loc, s[-1]))
 
         if scolors is None:
-            scolors = [SPHERE_COLOR] * len(self.sphere_configs)
-        elif scolors == 'rainbow':
-            from colorsys import hls_to_rgb
-            scolors = np.zeros((len(self.sphere_configs), 4))
-            scolors[:, -1] = 0.5 # transparent
-            ending_hue = 6. / 7
-            scolors[:, 0:3] = [hls_to_rgb(ending_hue * s[0]/7, 0.5, 1) for s in self.sphere_configs]
+            scolors = self.gen_sphere_colors()
+            # [SPHERE_COLOR] * len(self.sphere_configs)
 
         ids = []
         for sphere, color in zip(spheres, scolors):
@@ -151,6 +162,12 @@ class Bullet:
                 p.removeBody(id, physicsClientId=self.clid)
         self.obstacle_ids = []
 
+    def pull_from_real_robot(self):
+        self.arm.group.get_next_feedback(reuse_fbk=self.feedback)
+        self.feedback.get_position(self.current_position)
+        self.marionette(self.current_position)
+        return self.current_position
+
     def marionette(self, config):
 
         for i, idx in enumerate(JOINT_IDX):
@@ -180,11 +197,14 @@ def lineseg_dist(points, lineA, lineB):
     distances = np.ones(len(points))
     line = np.divide(lineB - lineA, np.linalg.norm(lineB - lineA))
     # signed parallel distance components
-    s = np.dot(lineA - points, line)
-    t = np.dot(points - lineB, line)
+    PA = lineA - points
+    BP = points - lineB
+    s = np.dot(PA, line)
+    t = np.dot(BP, line)
     inbtw_idx = np.logical_and(s > 0, t > 0)
     if np.any(inbtw_idx):
         distances[inbtw_idx] = np.cross(points[inbtw_idx] - lineA, line)
+    distances[~inbtw_idx] = np.minimum(np.linalg.norm(PA[~inbtw_idx], axis=1), np.linalg.norm(BP[~inbtw_idx],axis=1))
     return distances
 
 def check_collision(joint_position, sphere_config):
@@ -201,30 +221,30 @@ def check_collision(joint_position, sphere_config):
       for j in range(i+2, num_spheres):
         if sphere_config[j][0] <= sphere_config[i][0] + 1:
           continue
-        print(f"Checking ball {i} and {j}")
         dis = np.linalg.norm(sphere_locs[i] - sphere_locs[j])
         if dis <= sphere_config[i][-1] + sphere_config[j][-1]:
-          print("-> Collide")
           col_pairs.append((i,j))
+          print(f"Collide ball {i} and {j}")
 
     # ball x line
-    print("Checking chopsticks")
-    dist_to_chop1 = lineseg_dist(sphere_locs[:-4],sphere_locs[-1], sphere_locs[-2])
-    dist_to_chop2 = lineseg_dist(sphere_locs[:-4],sphere_locs[-3], sphere_locs[-4])
-    print(np.argwhere(dist_to_chop1 <= sphere_sizes[:-4]))
-    print(np.argwhere(dist_to_chop2 <= sphere_sizes[:-4]))
+    THRESHOLD = 0.01
+    dist_to_chop1 = lineseg_dist(sphere_locs[:-4,], sphere_locs[-1], sphere_locs[-2])
+    dist_to_chop2 = lineseg_dist(sphere_locs[:-4,], sphere_locs[-3], sphere_locs[-4])
+    print(dist_to_chop1)
+    print(dist_to_chop2)
+    collide_fix_chop = np.argwhere(dist_to_chop1 <= sphere_sizes[:-4] + THRESHOLD).ravel().tolist()
+    collide_moving_chop = np.argwhere(dist_to_chop2 <= sphere_sizes[:-4] + THRESHOLD).ravel().tolist()
+    return col_pairs, collide_fix_chop, collide_moving_chop
 
 # Use n to select the next sphere
 if __name__ == '__main__':
-    my_bullet = Bullet(gui=True)
+    my_bullet = Bullet(gui=True, real_robot=USE_REAL_ROBOT)
     my_bullet.load_robot(URDF_PATH)
-
-    joint_positions = [MOVING_POSITION]
 
     refinement = 0.01
 
     my_bullet.load_spheres(SPHERES_CONFIG)
-    my_bullet.marionette([MOVING_POSITION])
+    my_bullet.marionette(MOVING_POSITION)
 
     cursor = 0
 
@@ -234,7 +254,7 @@ if __name__ == '__main__':
         p.stepSimulation()
         time.sleep(0.01)
 
-        test_keys = ['q','n','1','2','3','4','5','6','7','8','o','a','r','9','0']
+        test_keys = ['q','n','1','2','3','4','5','6','7','8','o','a','r','9','0','p']
         pressed_key = None
         for _k in test_keys:
             if ord(_k) in keys:
@@ -245,15 +265,28 @@ if __name__ == '__main__':
 
         if pressed_key == None:
             continue
+        elif pressed_key == 'p':
+            import pdb;pdb.set_trace()
         elif pressed_key == 'q':
             break
         elif pressed_key == 'n':
             cursor += 1
         elif pressed_key == 'r':
-            jp = my_bullet.get_joint_positions()
+            if USE_REAL_ROBOT:
+                jp = my_bullet.pull_from_real_robot()
+            else:
+                jp = my_bullet.get_joint_positions()
+            print(jp)
             my_bullet.clear_all_obstacles()
-            my_bullet.show_spheres(jp)
-            check_collision(jp, my_bullet.sphere_configs)
+            col_pairs, col_fix, col_moving = check_collision(jp, my_bullet.sphere_configs)
+            scolors = my_bullet.gen_sphere_colors()
+            for i,j in col_pairs:
+                scolors[i][-1] = scolors[j][-1] = 1
+            for i in col_fix + col_moving:
+                print(f"{i} collide with chopsticks")
+                scolors[i][0:3] = HIGHLIGHT_COLOR[0:3]
+            my_bullet.show_spheres(jp, scolors)
+
         elif pressed_key in ['9','0']:
             if pressed_key == '9':
                 refinement = refinement * 2
