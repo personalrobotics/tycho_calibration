@@ -8,28 +8,36 @@
 # refresh the positions of spheres and adjust the individual link for each ball.
 #
 # To use:
-#   0.  Install pybullet.
+#   0.  Install pybullet and (optional) hebi
 #   1.  Set URDF_PATH = '...' to the full path. If you used an URDF compiled by
 #       ROS, you might have to remove 'packages://tycho_description' from urdf.
-#   2.  Load all the DH parameters.
+#   2.  Load the DH parameters.
 #   3.  Launch the script, you should see the robot and spheres (if any).
 #   4.  Use mouse to move the robot around, press 'r' to refresh spheres.
 #   5.  In the GUI, press
-#       'n' to select spheres;
+#       'n' to select the next sphere;
 #       'o' to change color of the current selection;
-#       '123456' to move;
-#       '78' to change ball size;
-#       '90' to adjust refinement;
+#       '123456' to move the sphere in xyz;
+#       '78' to change the ball size;
+#       '90' to adjust refinement stepsize;
 #       'a' to print the current sphere config (the script will not auto save);
+#       'r' to reload the robot and spheres;
+#           If you use real robot it updates the sim to match the real robot
+#       'c' to clear the spheres
 #       'q' to quit.
 #
 #===============================================================================
 
 URDF_PATH = '/home/prl/tycho_ws/src/tycho_env/tycho_env/assets/hebi_pybullet.urdf'
-JOINT_IDX = [2, 4, 6, 8, 10, 12, 14]
-SPHERE_COLOR = [144.0/255,238.0/255,144.0/255, 0.5]
+USE_REAL_ROBOT = False
+COMPRESS_LINK = True
 HIGHLIGHT_COLOR = [1,1,1,0.5]
-USE_REAL_ROBOT = True
+JOINT_IDX = range(7) if COMPRESS_LINK else [2, 4, 6, 8, 10, 12, 14]
+# If compressing fixed link together (useful when using pybullet contact points)
+# there will be only 7 joints. Otherwise, the JOINT_IDX contains the indexes
+# for the movable joints.
+
+#===============================================================================
 
 import tycho_env
 from tycho_env.utils import DH_params, MOVING_POSITION, get_DH_transformation, get_transformation_matrix, calculate_FK_transformation
@@ -79,7 +87,7 @@ class Sphere:
 
 class Bullet:
 
-    def __init__(self, gui=False, real_robot=False):
+    def __init__(self, gui=False):
         self.use_gui = gui
         if self.use_gui:
             self.clid = p.connect(p.GUI)
@@ -89,11 +97,6 @@ class Bullet:
         self.obstacle_ids = []
         self.obstacle_collision_ids = []
         self.sphere_configs = []
-
-        if real_robot:
-            self.arm = tycho_env.create_robot(dof=7)
-            self.feedback = hebi.GroupFeedback(7)
-            self.current_position = np.zeros(7)
 
     def __del__(self):
         p.disconnect(self.clid)
@@ -107,7 +110,9 @@ class Bullet:
 
     def load_robot(self, path):
         self.robot_id = p.loadURDF(path,
-            useFixedBase=True, physicsClientId=self.clid)
+            useFixedBase=True, physicsClientId=self.clid,
+            flags=p.URDF_USE_SELF_COLLISION |
+            (p.URDF_MERGE_FIXED_LINKS if COMPRESS_LINK else 0))
         self.urdf_path = path
 
     def load_spheres(self, sphere_configs):
@@ -130,7 +135,6 @@ class Bullet:
 
         if scolors is None:
             scolors = self.gen_sphere_colors()
-            # [SPHERE_COLOR] * len(self.sphere_configs)
 
         ids = []
         for sphere, color in zip(spheres, scolors):
@@ -169,7 +173,6 @@ class Bullet:
         return self.current_position
 
     def marionette(self, config):
-
         for i, idx in enumerate(JOINT_IDX):
             p.resetJointState(
                 self.robot_id, idx, config[i], physicsClientId=self.clid
@@ -238,8 +241,14 @@ def check_collision(joint_position, sphere_config):
 
 # Use n to select the next sphere
 if __name__ == '__main__':
-    my_bullet = Bullet(gui=True, real_robot=USE_REAL_ROBOT)
+    my_bullet = Bullet(gui=True)
     my_bullet.load_robot(URDF_PATH)
+
+    if USE_REAL_ROBOT:
+        import hebi
+        my_bullet.arm = tycho_env.create_robot(dof=7)
+        my_bullet.feedback = hebi.GroupFeedback(7)
+        my_bullet.current_position = np.zeros(7)
 
     refinement = 0.01
 
@@ -254,7 +263,7 @@ if __name__ == '__main__':
         p.stepSimulation()
         time.sleep(0.01)
 
-        test_keys = ['q','n','1','2','3','4','5','6','7','8','o','a','r','9','0','p']
+        test_keys = ['q','n','1','2','3','4','5','6','7','8','o','a','r','9','0','c']
         pressed_key = None
         for _k in test_keys:
             if ord(_k) in keys:
@@ -265,18 +274,22 @@ if __name__ == '__main__':
 
         if pressed_key == None:
             continue
-        elif pressed_key == 'p':
-            import pdb;pdb.set_trace()
         elif pressed_key == 'q':
             break
         elif pressed_key == 'n':
             cursor += 1
+        elif pressed_key == 'c':
+            my_bullet.clear_all_obstacles()
         elif pressed_key == 'r':
             if USE_REAL_ROBOT:
                 jp = my_bullet.pull_from_real_robot()
             else:
                 jp = my_bullet.get_joint_positions()
             print(jp)
+            if COMPRESS_LINK:
+                p.performCollisionDetection()
+                contactPoints = p.getContactPoints()
+                for cp in contactPoints: print(cp[3:5]) # Index of link-in-collision
             my_bullet.clear_all_obstacles()
             col_pairs, col_fix, col_moving = check_collision(jp, my_bullet.sphere_configs)
             scolors = my_bullet.gen_sphere_colors()
@@ -318,7 +331,7 @@ if __name__ == '__main__':
                 c = p.getVisualShapeData(obj_id)[0][7]
                 p.changeVisualShape(obj_id, -1,
                     rgbaColor=(HIGHLIGHT_COLOR if c[0] < 1.
-                                               else SPHERE_COLOR))
+                                               else my_bullet.gen_sphere_colors(cursor)))
 
 
     my_bullet.clear_all_obstacles()
