@@ -18,7 +18,7 @@ Throughout the doc, R = Optitrack transformation to the robot base frame.
 
 4. Paste the result figures and texts into the results folder and commmit.
 
-5. You will need to update: (1) the `calibration.py` (2) `tycho_env/utils.py` and (3) any demo launch file that publishes the transformation between the optitrack and .
+5. You will need to update: (1) the `calibration.py` (2) `tycho_env/utils.py` and (3) `tycho_demo/launch/start_demo.sh` and any other launch file that publishes the transformation between the optitrack and the world.
 
 ## DH Links
 

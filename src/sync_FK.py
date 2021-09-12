@@ -33,6 +33,7 @@ class bcolors:
 print(bcolors.BOLD + bcolors.FAIL + "[WARNING]: PLEASE CLOSE ANY ROS TOPIC !!!!!" + bcolors.ENDC)
 
 from subprocess import Popen, STDOUT, PIPE
+sys.path.append("/usr/lib/python3/dist-packages")
 import rospy
 import message_filters
 from geometry_msgs.msg import Point, PointStamped
@@ -47,7 +48,7 @@ if os.path.exists(label_name):
     print("Label file or image folder already exists!"
           "Quit now to prevent overwriting."
           "Press Enter to continue...")
-    raw_input()
+    input()
 label_file = open(label_name, mode='w')
 writer = csv.writer(label_file, delimiter = ',')
 
