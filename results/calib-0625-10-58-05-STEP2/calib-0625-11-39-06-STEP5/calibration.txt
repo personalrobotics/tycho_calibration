@@ -1,3 +1,0 @@
-Using CSV data/calibration-dynamic-0624.csv
-Filter threshold: 0.015
-Removing 43 out of 10537 datapoints
