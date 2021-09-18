@@ -144,7 +144,10 @@ if __name__ == '__main__':
   df = pd.read_csv(args.csv)
   optim_func = cmaes if args.cmaes else scipy_optimize
   list_ball = [np.fromstring(r[1:-1], dtype=np.float, sep=' ') for r in df['ball_loc'].to_list()] #[1:-1] to exclude '['']'
-  list_ball = list_ball[1100:-100]
+  ###########################################
+  ### TAKE ONLY THE DATA YOU NEEDED
+  ###########################################
+  list_ball = list_ball[100:2200] + list_ball[2550:-100]
   print(bcolors.OKGREEN, "\nNumber of data points to use:", len(list_ball), bcolors.ENDC)
   print("Number of data points to use:", len(list_ball), file=f)
 
@@ -227,6 +230,7 @@ if __name__ == '__main__':
 
   import seaborn as sns
   import matplotlib.pyplot as plt
+  plt.figure(0)
   sns.distplot(heights)
   plt.title("Projected heights")
   plt.xlabel("Heights")
@@ -234,6 +238,7 @@ if __name__ == '__main__':
   plt.savefig(os.path.join(foldername, "fit_R_heights_dist.jpg"))
   plt.show() if not args.plt else print("Saved plot fit_R_heights_dist")
 
+  plt.figure(1)
   sns.distplot(proj_r)
   plt.title("Projected distance to center")
   plt.xlabel("Distance to center")
@@ -241,6 +246,7 @@ if __name__ == '__main__':
   plt.savefig(os.path.join(foldername, "fit_R_radius_dist.jpg"))
   plt.show() if not args.plt else print("Saved plot fit_R_radius_dist")
 
+  plt.figure(2)
   x = np.arange(len(heights))
   sns.jointplot(x=x, y=heights)
   plt.title("Height in order of recording")
@@ -249,6 +255,7 @@ if __name__ == '__main__':
   plt.savefig(os.path.join(foldername, "fit_R_heights.jpg"))
   plt.show() if not args.plt else print("Saved plot fit_R_heights")
 
+  plt.figure(3)
   sns.jointplot(x=x, y=proj_r)
   plt.title("Projected distance to center, in order of recording")
   plt.xlabel("Recorded point #")

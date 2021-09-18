@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import argparse
 def construct_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--bag_folder_location', type=str, default="/home/prl/hebi_ws/src/hebi_teleop/recording/")
+    parser.add_argument('--bag_folder_location', type=str, default="/home/prl/tycho_ws/src/tycho_teleop/recording/")
     parser.add_argument('--bag_folder_name', type=str, default="calibration")
     parser.add_argument('--save_file_name', type=str, default="data/ball_and_jointpos.csv")
     parser.add_argument('-r','--cut_off', action='store_true')
