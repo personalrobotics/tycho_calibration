@@ -28,7 +28,7 @@
 #
 #===============================================================================
 
-URDF_PATH = '/home/prl/tycho_ws/src/tycho_env/tycho_env/assets/hebi_pybullet.urdf'
+URDF_PATH = '/home/prl/tycho_ws/src/tycho_env/tycho_env/assets/pybullet.urdf'
 USE_REAL_ROBOT = False
 COMPRESS_LINK = True
 HIGHLIGHT_COLOR = [1,1,1,0.5]
