@@ -45,7 +45,9 @@ def dis_point_to_plane(point, plane):
 def height_cost_fn(list_ball, params, verbose=False):
   # A cost function that considers the avg distance between points to the plane
   # Deprecated
-  costs = np.array([dis_point_to_plane(ball, params) for ball in list_ball])
+  balls = np.hstack((list_ball, np.ones((len(list_ball), 1))))
+  projections = balls @ params
+  costs = np.abs(projections) / np.sqrt(np.sum(np.square(params[:3])) + 1e-10)
   idx = not_outlier(costs)
   return np.average(costs[idx]) if not verbose else costs
 
@@ -61,7 +63,7 @@ def get_transformation_matrix(plane_params, shift_params):
 def not_outlier(arr, allowable_deviation=2):
   mean = np.mean(arr)
   std = np.std(arr)
-  dis = abs(arr - mean)
+  dis = np.abs(arr - mean)
   not_outlier =  dis < allowable_deviation * std
   return not_outlier
 
@@ -79,13 +81,19 @@ def generate_cost_func(list_ball, default_plane_params, sel_param_idx,
     plane_params = np.array(default_plane_params)
     plane_params[sel_param_idx] = new_params
     R = get_transformation_matrix(plane_params[0:4], plane_params[4:7])
-    transformed_points = np.array([R.dot(p)[0:3] for p in points])
-    heights = np.array([p[2] for p in transformed_points])
+    transformed_points = (points @ R.T)[:, :-1]
+    heights = transformed_points[:, 2]
     idx = not_outlier(heights)
     heights = heights[idx]
-    projected_points = [(p[0],p[1]) for p in transformed_points[idx]]
-    projected_distance = [np.linalg.norm(p) for p in projected_points]
+    transformed_points = transformed_points[idx]
+    projected_points = transformed_points[:, :2]
+    projected_distance = np.linalg.norm(projected_points, axis=1)
     deviation = np.linalg.norm(plane_params[0:4] / np.linalg.norm(plane_params[0:4]) - np.array([0,0,0,1]))
+
+    # we want the base height (in the optitrack frame) to be close to what we measured
+    base_height = (-R[:-1, :-1].T @ R[:-1, -1])[1] # get the y-component of translation of inverse rigid transform
+    base_height_diff = np.abs(base_height - MEASURED_BASE_HEIGHT)
+
     # The deviation cost assumes that we should be close to rotation default (0,0,0,1).
     # Without it, CMAES can go wild and flip the rotation by 180.
     cost = deviation * coefficient_of_deviation + \
@@ -150,6 +158,7 @@ if __name__ == '__main__':
   list_ball = list_ball[100:2200] + list_ball[2550:-100]
   print(bcolors.OKGREEN, "\nNumber of data points to use:", len(list_ball), bcolors.ENDC)
   print("Number of data points to use:", len(list_ball), file=f)
+  list_ball = np.array(list_ball)
 
   # Approach 1: Closed form solution .... minimize *vertical* distance
   # A = np.array(list_ball)
