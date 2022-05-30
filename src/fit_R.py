@@ -11,6 +11,8 @@ import scipy.optimize
 from scipy.spatial.transform import Rotation as scipyR
 from functools import partial
 
+MEASURED_BASE_HEIGHT = 0.006688 # measured by mocap, this is in the optitrack y axis (shown in Motive)
+
 class bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -70,7 +72,8 @@ def not_outlier(arr, allowable_deviation=2):
 def generate_cost_func(list_ball, default_plane_params, sel_param_idx,
                        coefficient_of_projected_radius_std=1,
                        coefficient_of_projected_heights_std=10,
-                       coefficient_of_deviation=0.05):
+                       coefficient_of_deviation=0.01,
+                       coefficient_of_base_height=0.2):
   # A cost function that considers the both the avg distance and the consistence of radius
   points = np.ones((len(list_ball), 4))
   points[:, 0:3] = list_ball
@@ -88,18 +91,20 @@ def generate_cost_func(list_ball, default_plane_params, sel_param_idx,
     transformed_points = transformed_points[idx]
     projected_points = transformed_points[:, :2]
     projected_distance = np.linalg.norm(projected_points, axis=1)
-    deviation = np.linalg.norm(plane_params[0:4] / np.linalg.norm(plane_params[0:4]) - np.array([0,0,0,1]))
+    deviation = np.linalg.norm(scipyR.from_quat(plane_params[:4]).as_mrp())
 
     # we want the base height (in the optitrack frame) to be close to what we measured
-    base_height = (-R[:-1, :-1].T @ R[:-1, -1])[1] # get the y-component of translation of inverse rigid transform
+    base_height = (-R[:-1, :-1].T @ R[:-1, -1])[2] # get the z-component of translation of inverse rigid transform
     base_height_diff = np.abs(base_height - MEASURED_BASE_HEIGHT)
+    base_height_sq_diff = np.square(base_height_diff)
 
     # The deviation cost assumes that we should be close to rotation default (0,0,0,1).
     # Without it, CMAES can go wild and flip the rotation by 180.
     cost = deviation * coefficient_of_deviation + \
            coefficient_of_projected_radius_std * np.std(projected_distance) + \
-           coefficient_of_projected_heights_std * np.std(heights)
-    return (projected_distance, heights, deviation) if verbose is True else cost
+           coefficient_of_projected_heights_std * np.std(heights) + \
+           coefficient_of_base_height * base_height_sq_diff
+    return (projected_distance, heights, deviation, base_height_diff) if verbose is True else cost
 
   return initP, cost_func
 
@@ -155,7 +160,7 @@ if __name__ == '__main__':
   ###########################################
   ### TAKE ONLY THE DATA YOU NEEDED
   ###########################################
-  list_ball = list_ball[100:2200] + list_ball[2550:-100]
+  list_ball = list_ball[100:-100] # chop off beginning and end
   print(bcolors.OKGREEN, "\nNumber of data points to use:", len(list_ball), bcolors.ENDC)
   print("Number of data points to use:", len(list_ball), file=f)
   list_ball = np.array(list_ball)
@@ -189,7 +194,7 @@ if __name__ == '__main__':
   init_plane_params = np.zeros(7)
   init_plane_params[3] = 1
   initP, cost_func = generate_cost_func(list_ball, init_plane_params, [0,1,2,3],
-    coefficient_of_projected_radius_std=0, coefficient_of_projected_heights_std=10)
+    coefficient_of_projected_radius_std=0, coefficient_of_projected_heights_std=10, coefficient_of_base_height=0)
   rotate_params = optim_func(cost_func, initP)
   newCost = cost_func(rotate_params, verbose=True)[1]
   start_colorful()
@@ -202,9 +207,9 @@ if __name__ == '__main__':
 
   #sinit_plane_params[0:4] = rotate_params
   init_plane_params[0:4] = [0, 0, 0, 1]
-  init_plane_params[4:7] = [-1.07, 0.08, avg_heights]
+  init_plane_params[4:7] = [-1.07, 0.08, -avg_heights]
   initP, cost_func = generate_cost_func(list_ball, init_plane_params, [4,5,6],
-    coefficient_of_projected_radius_std=1, coefficient_of_projected_heights_std=0)
+    coefficient_of_projected_radius_std=1, coefficient_of_projected_heights_std=0, coefficient_of_base_height=0)
   shift_params = optim_func(cost_func, initP)
   new_radius = cost_func(shift_params, verbose=True)[0]
   start_colorful()
@@ -221,18 +226,24 @@ if __name__ == '__main__':
   res = optim_func(cost_func, initP)
   res[0:4] = res[0:4] / np.linalg.norm(res[0:4])
   start_colorful()
-  print('Optimized Rotation', res)
-  print('Optimized Rotation', res, file=f)
+  res_str = np.array2string(res, max_line_width=200)
+  print('Optimized Rotation', res_str)
+  print('Optimized Rotation', res_str, file=f)
   print('Rotation in matrix form', scipyR.from_quat(res[0:4]).as_matrix())
   print('Rotation in quaternion', res[0:4])
 
-  proj_r, heights, deviation = cost_func(res, verbose=True)
+  proj_r, heights, deviation, base_height_diff = cost_func(res, verbose=True)
+  final_cost = cost_func(res)
   print_info(proj_r, "proj_r")
   print_info(heights, "proj_heights")
   print("deviation", deviation)
+  print("Base height diff: ", base_height_diff)
+  print("Final Cost: ", final_cost)
   print_info(proj_r, "proj_r", file=f)
   print_info(heights, "proj_heights", file=f)
   print("deviation", deviation, file=f)
+  print("Base height diff: ", base_height_diff, file=f)
+  print("Final Cost: ", final_cost, file=f)
   stop_colorful()
 
   f.close()

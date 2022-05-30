@@ -48,17 +48,23 @@ Follow the instruction in [tycho_julia](https://github.com/personalrobotics/tych
 
 3. Use `src/sync_FK.py` to turn the recording into a CSV file. **As always, before sync ROS messages, ensure to close any ROS node that is running!!!!** Otherwise, the message filter probably will not be able to find any synced message.
 
-3. Use `src/fit_R.py` to fit the transformation using the set of collected data. Remember to adjust both the csv to use and which portion of data to use in the script.
+4. Use `src/fit_R.py` to fit the transformation using the set of collected data. Remember to adjust both the csv to use and which portion of data to use in the script.
 
-4. Try `python src/fitR.py --csv data/calibration-fitR3.csv --cmaes`. Optionally, NOT passing the cmaes arg to use LBFGS.
+5. Measure the robot base height. Paste into `MEASURED_BASE_HEIGHT` at the top of `fit_R.py`
+    - Suggestion for measurement:
+      1. Let w be the width of the ball and let h be the height. Then set c=h-w/2, which is about the centroid.
+      2. Find 2 mocap balls of the same size. Put them on the T-channel, on either side of the robot base plate.
+      3. In Motive, find the heights (y-axis) and average them. Subtract the ground plane marker height. Account for ground plane offset (if nonzero). Subtract c (calculated in 1). Done!
 
-4. Paste the result figures and texts into the results folder and commmit.
+6. Try `python src/fitR.py --csv data/calibration-fitR3.csv --cmaes`. Optionally, NOT passing the cmaes arg to use LBFGS.
 
-5. You will need to update:
+7. Paste the result figures and texts into the results folder and commmit.
 
-  - (1) the `calibration.py`, there is a constant named `measured_R`. Note the height estimated by `fitR.py` can be arbitrary. Therefore, we use a measured constant. When you copy `R` to other files, please discard the height estimation and use our supplied constant.
-  - (2) `tycho_env/utils.py`, the constant named `R_OPTITRACK2BASE`. Again, use the constant height.
-  - (3) `tycho_demo/launch/optitrack_transform.sh`. You will need to change the order of the numbers before you fill this file. Again, use the constant height.
+8. You will need to update:
+
+  - (1) the `calibration.py`, there is a constant named `measured_R`.
+  - (2) `tycho_env/utils.py`, the constant named `R_OPTITRACK2BASE`.
+  - (3) `tycho_demo/launch/optitrack_transform.sh`. You will need to change the order of the numbers before you fill this file.
   - (4) Any demo launch file should source the script above to publish the transformation between the optitrack and the world. e.g. `tycho_demo`, `tycho_teleop`, `tycho_imitation` etc. If they are not, you need to update the R manually.
 
 ## DH Links

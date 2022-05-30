@@ -21,10 +21,8 @@ measured_R = np.array([0, 0, 0, 1, # quat x y z w, almost identity
      0,0,0])
 
 measured_R = np.array([
-  # updated on 2021 Sep.16
-0.00398982, -0.00179225, 0.00139171, 0.99998947, -1.07671013, 0.15280143,-0.02163 + 0.0162])
-
-measured_R[-1] = -0.02163 + 0.0162 # <- Use a constant to overwrite the height in fit_R
+  # updated on 2022 May.30
+-0.00162249, 0.00215902, -0.00000002, 0.99999635, -0.93919181, 0.16715677, -0.00317523])
 
 measured_FK = np.array([
      # link twist (alpha); link length (a);  joint offset (d); theta_offset;

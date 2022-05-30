@@ -12,8 +12,8 @@ def construct_parser():
     parser.add_argument('-r','--cut_off', action='store_true')
     return parser
 
-CUTOFF_BEGINNING = 3 * 10^8                    # unit in nanoseconds (10^9 nanoseconds = 1 second)
-CUTOFF_LENGTH = CUTOFF_BEGINNING + 5 * 10^8   # unit in nanoseconds
+CUTOFF_BEGINNING = 3e8                    # unit in nanoseconds (10^9 nanoseconds = 1 second)
+CUTOFF_LENGTH = CUTOFF_BEGINNING + 5e8    # unit in nanoseconds
 
 
 args = construct_parser().parse_args()
